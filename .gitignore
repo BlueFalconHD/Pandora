@@ -1,0 +1,17 @@
+*.kext
+.DS_Store
+bin/
+*.bin
+kernelcache*
+*.i64
+build/
+.cache/
+
+# CMake build artifacts
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+.
