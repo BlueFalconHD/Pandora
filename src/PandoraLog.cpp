@@ -1,6 +1,8 @@
 #include "PandoraLog.h"
 #include <os/log.h>
 
+bool pandora_log_initialized = false;
+
 // Global os_log_t instances, initialized to default
 os_log_t pandora_log = OS_LOG_DEFAULT;
 os_log_t pandora_kernel_log = OS_LOG_DEFAULT;
@@ -31,6 +33,8 @@ void pandora_log_init(void) {
     os_log_error(OS_LOG_DEFAULT,
                  "Failed to create custom os_log_t instances, using default");
   }
+
+  pandora_log_initialized = true;
 }
 
 void pandora_log_cleanup(void) {
@@ -55,4 +59,6 @@ void pandora_log_cleanup(void) {
     os_release(pandora_userclient_log);
     pandora_userclient_log = OS_LOG_DEFAULT;
   }
+
+  pandora_log_initialized = false;
 }

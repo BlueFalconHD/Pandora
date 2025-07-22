@@ -32,6 +32,8 @@
 #include <IOKit/IOLib.h>
 #include <os/log.h>
 
+extern bool pandora_log_initialized;
+
 // Global os_log_t instances for different categories
 extern os_log_t pandora_log;
 extern os_log_t pandora_kernel_log;
@@ -101,5 +103,11 @@ void pandora_log_cleanup(void);
 #else
 #error Unsupported pointer size
 #endif
+
+static inline void pandora_log_ensure_initialized(void) {
+  if (!pandora_log_initialized) {
+    pandora_log_init();
+  }
+}
 
 #endif // PANDORALOG_H

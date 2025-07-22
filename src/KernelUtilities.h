@@ -34,6 +34,35 @@ enum KUError {
   KUErrorNotEnoughBytesRead = -10,
 };
 
+static inline const char *get_error_name(KUError error) {
+  switch (error) {
+  case KUErrorSuccess:
+    return "Success";
+  case KUErrorMemoryAllocationFailed:
+    return "Memory allocation failed";
+  case KUErrorInvalidAddress:
+    return "Invalid address";
+  case KUErrorReadFailed:
+    return "Read operation failed";
+  case KUErrorWriteFailed:
+    return "Write operation failed";
+  case KUErrorKernelBaseNotFound:
+    return "Kernel base address not found";
+  case KUErrorKernelSlideNotFound:
+    return "Kernel slide value not found";
+  case KUErrorInvalidResetVector:
+    return "Invalid reset vector";
+  case KUErrorBadArgument:
+    return "Bad argument provided";
+  case KUErrorMemoryPreperationFailed:
+    return "Memory preparation failed";
+  case KUErrorNotEnoughBytesRead:
+    return "Not enough bytes read";
+  default:
+    return "Unknown error";
+  }
+}
+
 class KernelUtilities {
 public:
   KernelUtilities()

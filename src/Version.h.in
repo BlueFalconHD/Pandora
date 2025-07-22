@@ -1,0 +1,2 @@
+#pragma once
+#define PANDORA_VERSION_STRING "@PANDORA_VERSION@"

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+scripts/clean
+scripts/prod
+scripts/inst
