@@ -12,8 +12,7 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.5</string>
-
+	<string>1.0.8</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>Pandora</key>
@@ -24,12 +23,17 @@
 			<string>Pandora</string>
 			<key>IOMatchCategory</key>
 			<string>Pandora</string>
+
 			<key>IOProviderClass</key>
 			<string>IOResources</string>
+
 			<key>IOResourceMatch</key>
 			<string>IOBSD</string>
-            <key>IOUserClientClass</key>
-            <string>PandoraUserClient</string>
+
+			<key>IOUserClientClass</key>
+			<string>PandoraUserClient</string>
+			<key>IOProbeScore</key>
+			<integer>1000000</integer>
 		</dict>
 	</dict>
 	<key>OSBundleLibraries</key>

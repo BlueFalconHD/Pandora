@@ -1,26 +1,30 @@
-#include "Globals.h"
+#pragma once
+
+#include "TimeUtilities.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 // Global variable to track if the kmod has run
-bool kmod_run = false;
+extern bool kmod_run;
 
 // Global variable to track when (timestamp) the kmod start function was called
-uint64_t kmod_start_time = 0;
+extern TimestampPair kmod_start_time;
 
 // Global variable to track whether the IOService start function has been called
-bool io_service_start_called = false;
+extern bool io_service_start_called;
 
 // Global variable to track when (timestamp) the IOService start function was
 // called
-uint64_t io_service_start_time = 0;
+extern TimestampPair io_service_start_time;
 
 // Global variable to track whether the user client has been initialized (only
 // changes on first user client connection)
-bool user_client_initialized = false;
+extern bool user_client_initialized;
 
 // Global variable to track when (timestamp) the last user client initialization
 // was done
-uint64_t user_client_init_time = 0;
+extern TimestampPair user_client_init_time;
 
 // Global variable to track if PID 1 (launchd) exists at the time of kext start
 // (in ioservice)
-bool pid1_exists = false;
+extern bool pid1_exists;

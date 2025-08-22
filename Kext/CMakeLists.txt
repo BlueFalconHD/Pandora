@@ -29,7 +29,7 @@ set(KERNEL_CXX_FLAGS
     -Wall
     -O3
     -nostdinc
-    -nostdlib
+    # -nostdlib
     -mkernel
     -fno-use-cxa-atexit
     -fno-exceptions

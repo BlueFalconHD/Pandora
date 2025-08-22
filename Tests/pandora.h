@@ -4,14 +4,23 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Structure for holding both types of timestamps for debugging
+typedef struct {
+  uint64_t machTime;       // mach_absolute_time value
+  uint64_t unixTime;       // Unix timestamp equivalent
+  uint64_t nanosSinceBoot; // Nanoseconds since boot
+} TimestampPair;
+
 // Timing and generic metadata about the Pandora kext for debugging
 typedef struct {
-  uint64_t kmod_start_time;       // Timestamp when the kmod start function was
-                                  // called. 0 if not called yet
-  uint64_t io_service_start_time; // Timestamp when the IOService start function
-                                  // was called. 0 if not called yet
-  uint64_t user_client_init_time; // Timestamp when the last user client was
-                                  // initialized. 0 if not initialized yet
+  TimestampPair kmod_start_time; // Timestamp when the kmod start function was
+                                 // called. 0 if not called yet
+  TimestampPair
+      io_service_start_time; // Timestamp when the IOService start function
+                             // was called. 0 if not called yet
+  TimestampPair
+      user_client_init_time; // Timestamp when the last user client was
+                             // initialized. 0 if not initialized yet
   bool pid1_exists; // Whether PID 1 (launchd) exists at the time of kext start
 } PandoraMetadata;
 

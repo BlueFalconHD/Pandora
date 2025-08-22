@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "KernelUtilities.h"
 #include "PandoraLog.h"
+#include "TimeUtilities.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOReturn.h>
@@ -63,7 +64,7 @@ bool PandoraUserClient::initWithTask(task_t owningTask, void *securityID,
                       (uint32_t)(kernelBase & 0xFFFFFFFFu), kernelSlide);
 
   user_client_initialized = true;
-  user_client_init_time = mach_absolute_time();
+  user_client_init_time = makeCurrentTimestampPair();
 
   return allow;
 }
@@ -74,9 +75,10 @@ IOReturn PandoraUserClient::externalMethod(uint32_t selector,
                                            OSObject *target, void *reference) {
   static const IOExternalMethodDispatch methods[] = {
       /* 0 */ {(IOExternalMethodAction)&PandoraUserClient::kread, 3, 0, 0, 0},
-      /* 1 */
-      {(IOExternalMethodAction)&PandoraUserClient::getKernelBase, 0, 0, 1, 0},
+      /* 1 */ {(IOExternalMethodAction)&PandoraUserClient::kwrite, 3, 0, 0, 0},
       /* 2 */
+      {(IOExternalMethodAction)&PandoraUserClient::getKernelBase, 0, 0, 1, 0},
+      /* 3 */
       {(IOExternalMethodAction)&PandoraUserClient::getPandoraLoadMetadata, 0, 0,
        0, sizeof(PandoraMetadata)},
   };
@@ -141,6 +143,52 @@ IOReturn PandoraUserClient::kread(PandoraUserClient *client, void *reference,
                                                : kIOReturnVMError;
 }
 
+IOReturn PandoraUserClient::kwrite(PandoraUserClient *client, void *reference,
+                                   IOExternalMethodArguments *args) {
+  user_addr_t uaddr =
+      args->scalarInput[0];              // User-space buffer to copy data from
+  uint64_t kaddr = args->scalarInput[1]; // Kernel address to write to
+
+  size_t len = args->scalarInput[2]; // Length of data to write
+
+  if (!kaddr || !uaddr || !len)
+    return kIOReturnBadArgument;
+
+  // Allocate a buffer to read data from user space
+  void *buffer = IOMalloc(len);
+  if (!buffer) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::kread: Failed to allocate buffer of size %zu @ "
+        "0x%llx\n",
+        len, kaddr);
+    return kIOReturnNoMemory;
+  }
+
+  // copy from user space
+  int error = copyin(uaddr, buffer, len);
+  if (error != 0) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::kwrite: Failed to copy data from user space. "
+        "Error code: %d\n",
+        error);
+    IOFree(buffer, len);
+    return kIOReturnVMError;
+  }
+
+  // write to kernel space
+  KUError err = KernelUtilities::kwrite(kaddr, buffer, len);
+  if (err != KUErrorSuccess) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::kwrite: Failed to write %zu bytes to kernel "
+        "address 0x%llx. Error code: %s (%d)\n",
+        len, kaddr, get_error_name(err), err);
+    IOFree(buffer, len);
+    return kIOReturnVMError;
+  }
+
+  return kIOReturnSuccess;
+}
+
 IOReturn PandoraUserClient::getKernelBase(PandoraUserClient *client,
                                           void *reference,
                                           IOExternalMethodArguments *args) {
@@ -175,9 +223,12 @@ PandoraUserClient::getPandoraLoadMetadata(PandoraUserClient *client,
   }
 
   PandoraMetadata metadata = {};
-  metadata.kmod_start_time = kmod_start_time;
-  metadata.io_service_start_time = io_service_start_time;
-  metadata.user_client_init_time = user_client_init_time;
+  metadata.kmod_start_time =
+      kmod_run ? kmod_start_time : TimestampPair{0, 0, 0};
+  metadata.io_service_start_time =
+      io_service_start_called ? io_service_start_time : TimestampPair{0, 0, 0};
+  metadata.user_client_init_time =
+      user_client_initialized ? user_client_init_time : TimestampPair{0, 0, 0};
   metadata.pid1_exists = pid1_exists;
 
   memcpy(args->structureOutput, &metadata, sizeof(PandoraMetadata));
@@ -185,10 +236,15 @@ PandoraUserClient::getPandoraLoadMetadata(PandoraUserClient *client,
 
   PANDORA_LOG_DEFAULT(
       "PandoraUserClient::getPandoraLoadMetadata: Returned metadata - "
-      "kmod_start: %llu, io_service_start: %llu, user_client_init: %llu, "
+      "kmod_start: %llu (%llu), io_service_start: %llu (%llu), "
+      "user_client_init: %llu (%llu), "
       "pid1_exists: %s",
-      metadata.kmod_start_time, metadata.io_service_start_time,
-      metadata.user_client_init_time, metadata.pid1_exists ? "true" : "false");
+      metadata.kmod_start_time.unixTime, metadata.kmod_start_time.machTime,
+      metadata.io_service_start_time.unixTime,
+      metadata.io_service_start_time.machTime,
+      metadata.user_client_init_time.unixTime,
+      metadata.user_client_init_time.machTime,
+      metadata.pid1_exists ? "true" : "false");
 
   return kIOReturnSuccess;
 }

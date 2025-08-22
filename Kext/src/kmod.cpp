@@ -1,5 +1,6 @@
 #include "Globals.h"
 #include "PandoraLog.h"
+#include "TimeUtilities.h"
 
 #include <mach/kmod.h>
 #include <mach/mach_time.h>
@@ -9,9 +10,12 @@
 static kern_return_t initialize_cpp() {
   pandora_log_ensure_initialized();
 
+  // Initialize time utilities first
+  TimeUtilities::init();
+
   PANDORA_LOG_DEFAULT("kmod.cpp:initialize_cpp: I've been run!");
   kmod_run = true;
-  kmod_start_time = mach_absolute_time();
+  kmod_start_time = makeCurrentTimestampPair();
 
   return KERN_SUCCESS;
 }

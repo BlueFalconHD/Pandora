@@ -1,6 +1,7 @@
 #include "Pandora.h"
 #include "Globals.h"
 #include "PandoraLog.h"
+#include "TimeUtilities.h"
 
 #include <IOKit/IOLib.h>
 #include <IOKit/IOService.h>
@@ -19,20 +20,12 @@ bool Pandora::start(IOService *provider) {
   PANDORA_LOG_DEFAULT("Pandora.cpp:(Pandora(IOService)::start): I've been run");
   PANDORA_LOG_DEFAULT("kmod run? %s", kmod_run ? "yes" : "no");
   io_service_start_called = true;
-  io_service_start_time = mach_absolute_time();
+  io_service_start_time = makeCurrentTimestampPair();
 
   registerService();
 
   // Check if PID 1 (launchd) exists
-  proc_t pid1_proc = proc_find(1);
-  if (pid1_proc != nullptr) {
-    PANDORA_LOG_DEFAULT("PID 1 exists, launchd is running.");
-    proc_rele(pid1_proc);
-    pid1_exists = true;
-  } else {
-    PANDORA_LOG_DEFAULT("PID 1 does not exist, we are early enough.");
-    pid1_exists = false;
-  }
+  pid1_exists = false;
 
   /*
     // // Initialize KernelUtilities and log the kernel base address
