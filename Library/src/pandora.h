@@ -24,6 +24,12 @@ typedef struct {
   bool pid1_exists; // Whether PID 1 (launchd) exists at the time of kext start
 } PandoraMetadata;
 
+extern uint64_t pd_kbase;
+extern uint64_t pd_kslide;
+
+#define kslide(x) (x + pd_kslide - 0x8000)
+#define kunslide(x) (x - pd_kslide + 0x8000)
+
 /* Initialisation and deinitialisation */
 int pd_init(void);
 void pd_deinit(void);
@@ -34,6 +40,11 @@ uint16_t pd_read16(uint64_t addr);
 uint32_t pd_read32(uint64_t addr);
 uint64_t pd_read64(uint64_t addr);
 int pd_readbuf(uint64_t addr, void *buf, size_t len);
+kern_return_t pd_write8(uint64_t addr, uint8_t val);
+kern_return_t pd_write16(uint64_t addr, uint16_t val);
+kern_return_t pd_write32(uint64_t addr, uint32_t val);
+kern_return_t pd_write64(uint64_t addr, uint64_t val);
+kern_return_t pd_writebuf(uint64_t addr, const void *buf, size_t len);
 
 /* Kernel utilities */
 uint64_t pd_get_kernel_base();

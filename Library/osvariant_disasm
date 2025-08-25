@@ -1,0 +1,26 @@
+c.a.k:__text:FFFFFE0008DB786C
+c.a.k:__text:FFFFFE0008DB786C sub_FFFFFE0008DB786C                    ; DATA XREF: c.a.k:__const:FFFFFE0007CEA020↑o
+c.a.k:__text:FFFFFE0008DB786C                 BTI             c
+c.a.k:__text:FFFFFE0008DB7870                 LDR             X8, [X3,#0x30]
+c.a.k:__text:FFFFFE0008DB7874                 CBZ             X8, loc_FFFFFE0008DB78AC
+c.a.k:__text:FFFFFE0008DB7878                 LDR             X8, [X3]
+c.a.k:__text:FFFFFE0008DB787C                 ADRP            X9, #_kernproc@PAGE
+c.a.k:__text:FFFFFE0008DB7880                 LDR             X9, [X9,#_kernproc@PAGEOFF]
+c.a.k:__text:FFFFFE0008DB7884                 CMP             X9, X8
+c.a.k:__text:FFFFFE0008DB7888                 B.EQ            loc_FFFFFE0008DB78A4
+c.a.k:__text:FFFFFE0008DB788C                 LDR             W8, [X8,#0x60]
+c.a.k:__text:FFFFFE0008DB7890                 ADRP            X9, #qword_FFFFFE000C527CF0@PAGE
+c.a.k:__text:FFFFFE0008DB7894                 LDR             X9, [X9,#qword_FFFFFE000C527CF0@PAGEOFF]
+c.a.k:__text:FFFFFE0008DB7898                 CMP             W8, #1
+c.a.k:__text:FFFFFE0008DB789C                 CCMP            X9, #0, #0, EQ
+c.a.k:__text:FFFFFE0008DB78A0                 B.EQ            loc_FFFFFE0008DB78AC
+c.a.k:__text:FFFFFE0008DB78A4
+c.a.k:__text:FFFFFE0008DB78A4 loc_FFFFFE0008DB78A4                    ; CODE XREF: sub_FFFFFE0008DB786C+1C↑j
+c.a.k:__text:FFFFFE0008DB78A4                 MOV             W0, #1
+c.a.k:__text:FFFFFE0008DB78A8                 RET
+c.a.k:__text:FFFFFE0008DB78AC ; ---------------------------------------------------------------------------
+c.a.k:__text:FFFFFE0008DB78AC
+c.a.k:__text:FFFFFE0008DB78AC loc_FFFFFE0008DB78AC                    ; CODE XREF: sub_FFFFFE0008DB786C+8↑j
+c.a.k:__text:FFFFFE0008DB78AC                                         ; sub_FFFFFE0008DB786C+34↑j
+c.a.k:__text:FFFFFE0008DB78AC                 B               _sysctl_handle_quad
+c.a.k:__text:FFFFFE0008DB78AC ; End of function sub_FFFFFE0008DB786C

@@ -7,15 +7,29 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_executable(pdtest
-    pandora.c
-    test.c
-    pandora.h
-)
+file(GLOB_RECURSE PANDORA_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+add_executable(pdtest ${PANDORA_SOURCES})
 
 target_compile_options(pdtest PRIVATE -Wall -Wextra)
-target_include_directories(pdtest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(pdtest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pdtest PRIVATE "-framework IOKit" "-framework CoreFoundation")
+
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(CAPSTONE QUIET IMPORTED_TARGET capstone)
+    if(TARGET PkgConfig::CAPSTONE)
+        target_link_libraries(pdtest PRIVATE PkgConfig::CAPSTONE)
+    endif()
+endif()
+
+if(NOT TARGET PkgConfig::CAPSTONE)
+    find_library(CAPSTONE_LIBRARY NAMES capstone)
+    if(CAPSTONE_LIBRARY)
+        target_link_libraries(pdtest PRIVATE "${CAPSTONE_LIBRARY}")
+    else()
+        message(WARNING "Capstone library not found. Install via Homebrew: brew install capstone, or provide CAPSTONE_LIBRARY.")
+    endif()
+endif()
 
 set_target_properties(pdtest PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/build"

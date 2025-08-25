@@ -28,3 +28,10 @@ extern TimestampPair user_client_init_time;
 // Global variable to track if PID 1 (launchd) exists at the time of kext start
 // (in ioservice)
 extern bool pid1_exists;
+
+// Extra error data for debugging purposes
+extern uint64_t extraerrdata1;
+extern uint64_t extraerrdata2;
+extern uint64_t extraerrdata3;
+
+extern bool workloopsaw0;

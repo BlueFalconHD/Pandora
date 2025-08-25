@@ -24,3 +24,9 @@ TimestampPair user_client_init_time = {};
 // Global variable to track if PID 1 (launchd) exists at the time of kext start
 // (in ioservice)
 bool pid1_exists = false;
+
+uint64_t extraerrdata1 = 0;
+uint64_t extraerrdata2 = 0;
+uint64_t extraerrdata3 = 0;
+
+bool workloopsaw0 = false;

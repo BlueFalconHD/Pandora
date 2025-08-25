@@ -7,6 +7,10 @@
 #include <stdio.h>
 
 #define KADDR_OBFUSCATION_KEY 0x6869726520706C7A
+#define STATIC_KERNEL_BASE 0xFFFFFE0007004000
+
+uint64_t pd_kbase = 0;
+uint64_t pd_kslide = 0;
 
 io_connect_t gClient = MACH_PORT_NULL;
 
@@ -122,7 +126,10 @@ uint64_t pd_get_kernel_base() {
   if (ret != KERN_SUCCESS) {
     return 0;
   }
-  return kbase ^ KADDR_OBFUSCATION_KEY; // unlock
+  pd_kbase = kbase ^ KADDR_OBFUSCATION_KEY; // unlock
+  pd_kslide = pd_kbase - STATIC_KERNEL_BASE;
+
+  return pd_kbase;
 }
 
 int pd_get_metadata(PandoraMetadata *metadata) {

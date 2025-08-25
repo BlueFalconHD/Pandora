@@ -1,4 +1,5 @@
 #include "KernelUtilities.h"
+#include "Globals.h"
 #include "PandoraLog.h"
 
 #include <stddef.h>
@@ -39,9 +40,9 @@ KUError KernelUtilities::kread(uint64_t address, void *buffer, size_t size) {
 
   IOReturn ret = memDesc->prepare();
   if (ret != kIOReturnSuccess) {
-    PANDORA_MEMORY_LOG_ERROR("Failed to prepare IOMemoryDescriptor for read at "
-                             "address 0x%llx, IOReturn: 0x%x",
-                             address, ret);
+    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for read at "
+                        "address 0x%llx, IOReturn: 0x%x",
+                        address, ret);
     memDesc->release();
     return KUErrorMemoryPreperationFailed;
   }
@@ -50,9 +51,9 @@ KUError KernelUtilities::kread(uint64_t address, void *buffer, size_t size) {
   uint64_t bytesRead = memDesc->readBytes(0, buffer, size);
 
   if (bytesRead != size) {
-    PANDORA_MEMORY_LOG_ERROR("Read operation incomplete at address 0x%llx: "
-                             "expected %zu bytes, got %llu bytes",
-                             address, size, bytesRead);
+    PANDORA_LOG_DEFAULT("Read operation incomplete at address 0x%llx: "
+                        "expected %zu bytes, got %llu bytes",
+                        address, size, bytesRead);
     memDesc->complete();
     memDesc->release();
     return KUErrorNotEnoughBytesRead;
@@ -70,27 +71,66 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
   }
 
   IOMemoryDescriptor *memDesc = IOMemoryDescriptor::withAddressRange(
-      address, size, kIODirectionOut, kernel_task);
+      address, size, kIODirectionInOut, kernel_task);
   if (!memDesc) {
-    PANDORA_MEMORY_LOG_ERROR("Failed to create IOMemoryDescriptor for write at "
-                             "address 0x%llx, size %zu",
-                             address, size);
+    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
+                        "address 0x%llx, size %zu",
+                        address, size);
+    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
+                        "address 0x%llx, size %zu",
+                        address, size);
+    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
+                        "address 0x%llx, size %zu",
+                        address, size);
+    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
+                        "address 0x%llx, size %zu",
+                        address, size);
+    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
+                        "address 0x%llx, size %zu",
+                        address, size);
     return KUErrorMemoryAllocationFailed;
   }
   IOReturn ret = memDesc->prepare();
   if (ret != kIOReturnSuccess) {
-    PANDORA_MEMORY_LOG_ERROR("Failed to prepare IOMemoryDescriptor for write "
-                             "at address 0x%llx, IOReturn: 0x%x",
-                             address, ret);
+    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
+                        "at address 0x%llx, IOReturn: 0x%x",
+                        address, ret);
+    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
+                        "at address 0x%llx, IOReturn: 0x%x",
+                        address, ret);
+    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
+                        "at address 0x%llx, IOReturn: 0x%x",
+                        address, ret);
+    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
+                        "at address 0x%llx, IOReturn: 0x%x",
+                        address, ret);
+    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
+                        "at address 0x%llx, IOReturn: 0x%x",
+                        address, ret);
+    extraerrdata1 = ret;
     memDesc->release();
     return KUErrorMemoryPreperationFailed;
   }
 
   uint64_t bytesWritten = memDesc->writeBytes(0, buffer, size);
   if (bytesWritten != size) {
-    PANDORA_MEMORY_LOG_ERROR("Write operation incomplete at address 0x%llx: "
-                             "expected %zu bytes, wrote %llu bytes",
-                             address, size, bytesWritten);
+    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
+                        "expected %zu bytes, wrote %llu bytes",
+                        address, size, bytesWritten);
+    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
+                        "expected %zu bytes, wrote %llu bytes",
+                        address, size, bytesWritten);
+    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
+                        "expected %zu bytes, wrote %llu bytes",
+                        address, size, bytesWritten);
+    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
+                        "expected %zu bytes, wrote %llu bytes",
+                        address, size, bytesWritten);
+    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
+                        "expected %zu bytes, wrote %llu bytes",
+                        address, size, bytesWritten);
+    extraerrdata1 = size;
+    extraerrdata2 = bytesWritten;
     memDesc->complete();
     memDesc->release();
     return KUErrorNotEnoughBytesRead;
@@ -109,8 +149,7 @@ KUError KernelUtilities::locateKernelBase(uint64_t *kernelBaseAddress,
 
   uint64_t kernelPage = getResetVector();
   if (kernelPage == 0) {
-    PANDORA_KERNEL_LOG_ERROR(
-        "Failed to get reset vector from vbar_el1 register");
+    PANDORA_LOG_DEFAULT("Failed to get reset vector from vbar_el1 register");
     return KUErrorInvalidResetVector;
   }
 
@@ -120,7 +159,7 @@ KUError KernelUtilities::locateKernelBase(uint64_t *kernelBaseAddress,
 
   uint8_t *buffer = (uint8_t *)IOMalloc(chunkSize);
   if (!buffer) {
-    PANDORA_MEMORY_LOG_ERROR(
+    PANDORA_LOG_DEFAULT(
         "Failed to allocate %zu bytes for kernel base search buffer",
         chunkSize);
     return KUErrorMemoryAllocationFailed;
@@ -170,8 +209,7 @@ KUError KernelUtilities::locateKernelBase(uint64_t *kernelBaseAddress,
     }
   }
 
-  PANDORA_KERNEL_LOG_ERROR(
-      "Kernel base address not found after exhaustive search");
+  PANDORA_LOG_DEFAULT("Kernel base address not found after exhaustive search");
   IOFree(buffer, chunkSize);
   return KUErrorKernelBaseNotFound;
 }

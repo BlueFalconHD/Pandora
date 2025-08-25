@@ -14,9 +14,9 @@
 // 28-31 constant 0xF (sentinel marking “userland-generated”)
 
 // 32    disabled_status.content   (set if “content” is disabled)
-// 33    disabled_status.diags     (… “diagnostics”)
-// 34    disabled_status.ui        (… “ui”)
-// 35    disabled_status.security  (… “security”)
+// 33    disabled_status.diags     (... “diagnostics”)
+// 34    disabled_status.ui        (... “ui”)
+// 35    disabled_status.security  (... “security”)
 
 // 48-51 os_boot_mode
 //         1 = normal (no string),

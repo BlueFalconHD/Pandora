@@ -113,6 +113,7 @@ preinstall/fast:
 
 # clear depends
 depend:
+	$(CMAKE_COMMAND) -P /Users/hayes/Stores/repos/bluefalconhd/Pandora/Library/CMakeFiles/VerifyGlobs.cmake
 	$(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
@@ -129,53 +130,77 @@ pdtest/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/build
 .PHONY : pdtest/fast
 
-pandora.o: pandora.c.o
-.PHONY : pandora.o
+src/osvariant_status/patch.o: src/osvariant_status/patch.c.o
+.PHONY : src/osvariant_status/patch.o
 
 # target to build an object file
-pandora.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/pandora.c.o
-.PHONY : pandora.c.o
+src/osvariant_status/patch.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/osvariant_status/patch.c.o
+.PHONY : src/osvariant_status/patch.c.o
 
-pandora.i: pandora.c.i
-.PHONY : pandora.i
+src/osvariant_status/patch.i: src/osvariant_status/patch.c.i
+.PHONY : src/osvariant_status/patch.i
 
 # target to preprocess a source file
-pandora.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/pandora.c.i
-.PHONY : pandora.c.i
+src/osvariant_status/patch.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/osvariant_status/patch.c.i
+.PHONY : src/osvariant_status/patch.c.i
 
-pandora.s: pandora.c.s
-.PHONY : pandora.s
+src/osvariant_status/patch.s: src/osvariant_status/patch.c.s
+.PHONY : src/osvariant_status/patch.s
 
 # target to generate assembly for a file
-pandora.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/pandora.c.s
-.PHONY : pandora.c.s
+src/osvariant_status/patch.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/osvariant_status/patch.c.s
+.PHONY : src/osvariant_status/patch.c.s
 
-test.o: test.c.o
-.PHONY : test.o
+src/pandora.o: src/pandora.c.o
+.PHONY : src/pandora.o
 
 # target to build an object file
-test.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/test.c.o
-.PHONY : test.c.o
+src/pandora.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/pandora.c.o
+.PHONY : src/pandora.c.o
 
-test.i: test.c.i
-.PHONY : test.i
+src/pandora.i: src/pandora.c.i
+.PHONY : src/pandora.i
 
 # target to preprocess a source file
-test.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/test.c.i
-.PHONY : test.c.i
+src/pandora.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/pandora.c.i
+.PHONY : src/pandora.c.i
 
-test.s: test.c.s
-.PHONY : test.s
+src/pandora.s: src/pandora.c.s
+.PHONY : src/pandora.s
 
 # target to generate assembly for a file
-test.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/test.c.s
-.PHONY : test.c.s
+src/pandora.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/pandora.c.s
+.PHONY : src/pandora.c.s
+
+src/test.o: src/test.c.o
+.PHONY : src/test.o
+
+# target to build an object file
+src/test.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/test.c.o
+.PHONY : src/test.c.o
+
+src/test.i: src/test.c.i
+.PHONY : src/test.i
+
+# target to preprocess a source file
+src/test.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/test.c.i
+.PHONY : src/test.c.i
+
+src/test.s: src/test.c.s
+.PHONY : src/test.s
+
+# target to generate assembly for a file
+src/test.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/test.c.s
+.PHONY : src/test.c.s
 
 # Help Target
 help:
@@ -186,12 +211,15 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... pdtest"
-	@echo "... pandora.o"
-	@echo "... pandora.i"
-	@echo "... pandora.s"
-	@echo "... test.o"
-	@echo "... test.i"
-	@echo "... test.s"
+	@echo "... src/osvariant_status/patch.o"
+	@echo "... src/osvariant_status/patch.i"
+	@echo "... src/osvariant_status/patch.s"
+	@echo "... src/pandora.o"
+	@echo "... src/pandora.i"
+	@echo "... src/pandora.s"
+	@echo "... src/test.o"
+	@echo "... src/test.i"
+	@echo "... src/test.s"
 .PHONY : help
 
 
@@ -203,6 +231,7 @@ help:
 # No rule that depends on this can have commands that come from listfiles
 # because they might be regenerated.
 cmake_check_build_system:
+	$(CMAKE_COMMAND) -P /Users/hayes/Stores/repos/bluefalconhd/Pandora/Library/CMakeFiles/VerifyGlobs.cmake
 	$(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
 .PHONY : cmake_check_build_system
 

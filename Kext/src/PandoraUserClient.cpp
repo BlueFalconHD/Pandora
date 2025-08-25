@@ -31,6 +31,9 @@ bool PandoraUserClient::initWithTask(task_t owningTask, void *securityID,
                       "User Client with task %p, security ID %p, type %u",
                       owningTask, securityID, type);
 
+  PANDORA_LOG_DEFAULT(
+      "PandoraUserClient::initWithTask: current saw 0 state: %d", workloopsaw0);
+
   bool allow = false;
   OSObject *entitlement =
       copyClientEntitlement(owningTask, "com.bluefalconhd.pandora.krw");
@@ -180,8 +183,9 @@ IOReturn PandoraUserClient::kwrite(PandoraUserClient *client, void *reference,
   if (err != KUErrorSuccess) {
     PANDORA_USERCLIENT_LOG_ERROR(
         "PandoraUserClient::kwrite: Failed to write %zu bytes to kernel "
-        "address 0x%llx. Error code: %s (%d)\n",
-        len, kaddr, get_error_name(err), err);
+        "address 0x%llx. Error code: %s (%d). extra data [%llu, %llu, %llu]\n",
+        len, kaddr, get_error_name(err), err, extraerrdata1, extraerrdata2,
+        extraerrdata3);
     IOFree(buffer, len);
     return kIOReturnVMError;
   }
