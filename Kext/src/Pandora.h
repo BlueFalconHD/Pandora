@@ -1,7 +1,8 @@
 #ifndef PANDORA_H
 #define PANDORA_H
 
-#include "KernelUtilities.h"
+#include "Utils/KernelUtilities.h"
+#include "Utils/VersionUtilities.h"
 #include <IOKit/IOService.h>
 #include <IOKit/IOTimerEventSource.h>
 
@@ -20,7 +21,9 @@ private:
   IOTimerEventSource *timer_{nullptr};
 
   KernelUtilities ku_; // single instance
-  static constexpr uint64_t kUnslid{0xfffffe000c527cf0ULL};
+  VersionUtilities vu_;
+
+  uintptr_t unslid_addr_{0};
   uint64_t slid_addr_{0}; // computed once after ku_.init()
 
   uint64_t last_value_{0};

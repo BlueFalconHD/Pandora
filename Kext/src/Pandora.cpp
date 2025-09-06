@@ -1,13 +1,13 @@
 #include "Pandora.h"
 #include "Globals.h"
-#include "KernelUtilities.h"
-#include "PandoraLog.h"
+#include "Utils/KernelUtilities.h"
+#include "Utils/PandoraLog.h"
 #include <IOKit/IOLib.h>
 
 #define super IOService
-OSDefineMetaClassAndFinalStructors(Pandora, IOService)
+OSDefineMetaClassAndFinalStructors(Pandora, IOService);
 
-    bool Pandora::start(IOService *provider) {
+bool Pandora::start(IOService *provider) {
   if (!super::start(provider))
     return false;
 
@@ -16,36 +16,73 @@ OSDefineMetaClassAndFinalStructors(Pandora, IOService)
   // Init KU once and compute slid target
   auto st = ku_.init();
   if (st != KUErrorSuccess) {
-    PANDORA_KERNEL_LOG_ERROR("KernelUtilities init failed: %d", st);
+    PANDORA_LOG_DEFAULT("KernelUtilities init failed: %d", st);
     super::stop(provider);
     return false;
   }
-  slid_addr_ = ku_.kslide(kUnslid);
-  PANDORA_KERNEL_LOG_INFO("Polling unslid=0x%llx slid=0x%llx",
-                          (unsigned long long)kUnslid,
-                          (unsigned long long)slid_addr_);
+
+  PANDORA_LOG_DEFAULT("KernelUtilities init succeeded");
+
+  if (!vu_.init()) {
+    PANDORA_LOG_DEFAULT("VersionUtilities init failed");
+    super::stop(provider);
+    return false;
+  }
+
+  PANDORA_LOG_DEFAULT("VersionUtilities init succeeded");
+
+  if (!vu_.isSupportedVersion()) {
+    PANDORA_LOG_DEFAULT("Unsupported macOS version for this machine: %s",
+                        vu_.getBuildVersion());
+    goto fail;
+  }
+
+  vu_.getOsVariantStatusBacking(&unslid_addr_);
+  if (unslid_addr_ == 0 || unslid_addr_ == kNoHook) {
+    PANDORA_LOG_DEFAULT(
+        "Failed to get osvariant_status_backing address, cannot start Pandora");
+    goto fail;
+  }
+
+  slid_addr_ = ku_.kslide(unslid_addr_);
 
   workloop_ = IOWorkLoop::workLoop();
-  if (!workloop_)
+  if (!workloop_) {
+    PANDORA_LOG_DEFAULT("Failed to create IOWorkLoop");
     goto fail;
+  }
+
+  PANDORA_LOG_DEFAULT("IOWorkLoop created successfully");
 
   timer_ = IOTimerEventSource::timerEventSource(this, onTimer);
-  if (!timer_)
+  if (!timer_) {
+    PANDORA_LOG_DEFAULT("Failed to create IOTimerEventSource");
     goto fail;
+  }
 
-  if (workloop_->addEventSource(timer_) != kIOReturnSuccess)
+  PANDORA_LOG_DEFAULT("IOTimerEventSource created successfully");
+
+  if (workloop_->addEventSource(timer_) != kIOReturnSuccess) {
+    PANDORA_LOG_DEFAULT("Failed to add IOTimerEventSource to workloop");
     goto fail;
+  }
+
+  PANDORA_LOG_DEFAULT("IOTimerEventSource added to workloop successfully");
 
   timer_->setTimeoutUS(50'000); // 10 ms
   registerService();
   return true;
 
 fail:
+  PANDORA_LOG_DEFAULT("Failed to start Pandora service, cleaning up resources");
+
   if (timer_) {
+    PANDORA_LOG_DEFAULT("Cleaning up timer event source");
     timer_->release();
     timer_ = nullptr;
   }
   if (workloop_) {
+    PANDORA_LOG_DEFAULT("Cleaning up workloop");
     workloop_->release();
     workloop_ = nullptr;
   }
@@ -55,6 +92,8 @@ fail:
 }
 
 void Pandora::stop(IOService *provider) {
+  PANDORA_LOG_DEFAULT("Stopping Pandora service");
+
   if (timer_) {
     timer_->cancelTimeout();
     if (workloop_)
@@ -71,6 +110,8 @@ void Pandora::stop(IOService *provider) {
 }
 
 void Pandora::free() {
+  PANDORA_LOG_DEFAULT("Freeing Pandora service");
+
   if (timer_) {
     timer_->cancelTimeout();
     if (workloop_)
@@ -88,7 +129,7 @@ void Pandora::free() {
 void Pandora::onTimer(OSObject *owner, IOTimerEventSource *sender) {
   auto *self = OSDynamicCast(Pandora, owner);
   if (!self || self->slid_addr_ == 0) {
-    sender->setTimeoutUS(10'000);
+    sender->setTimeoutUS(50'000);
     return;
   }
 
@@ -105,7 +146,7 @@ void Pandora::onTimer(OSObject *owner, IOTimerEventSource *sender) {
     // long)val);
     if (val == 0) {
       PANDORA_LOG_DEFAULT("Performing kwrite when see 0...");
-      uint64_t newVal = 0x70010002f388828f;
+      uint64_t newVal = 0x70010000f38882cf;
       rc = KernelUtilities::kwrite(self->slid_addr_, &newVal, sizeof(newVal));
       if (rc == KUErrorSuccess) {
         PANDORA_LOG_DEFAULT("kwrite succeeded");
@@ -115,7 +156,7 @@ void Pandora::onTimer(OSObject *owner, IOTimerEventSource *sender) {
       workloopsaw0 = true;
     }
   } else {
-    // PANDORA_LOG_DEFAULT("kread failed: %d", rc);
+    PANDORA_LOG_DEFAULT("kread failed: %d", rc);
   }
 
   sender->setTimeoutUS(50'000); // re-arm

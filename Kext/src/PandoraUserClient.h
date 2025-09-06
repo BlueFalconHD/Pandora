@@ -1,8 +1,7 @@
 #pragma once
 
-#include "Globals.h"
-#include "KernelUtilities.h"
-#include "TimeUtilities.h"
+#include "Utils/KernelUtilities.h"
+#include "Utils/TimeUtilities.h"
 #include <IOKit/IOUserClient.h>
 #include <stdint.h>
 

@@ -130,6 +130,30 @@ pdtest/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/build
 .PHONY : pdtest/fast
 
+src/hexdump.o: src/hexdump.c.o
+.PHONY : src/hexdump.o
+
+# target to build an object file
+src/hexdump.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/hexdump.c.o
+.PHONY : src/hexdump.c.o
+
+src/hexdump.i: src/hexdump.c.i
+.PHONY : src/hexdump.i
+
+# target to preprocess a source file
+src/hexdump.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/hexdump.c.i
+.PHONY : src/hexdump.c.i
+
+src/hexdump.s: src/hexdump.c.s
+.PHONY : src/hexdump.s
+
+# target to generate assembly for a file
+src/hexdump.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pdtest.dir/build.make CMakeFiles/pdtest.dir/src/hexdump.c.s
+.PHONY : src/hexdump.c.s
+
 src/osvariant_status/patch.o: src/osvariant_status/patch.c.o
 .PHONY : src/osvariant_status/patch.o
 
@@ -211,6 +235,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... pdtest"
+	@echo "... src/hexdump.o"
+	@echo "... src/hexdump.i"
+	@echo "... src/hexdump.s"
 	@echo "... src/osvariant_status/patch.o"
 	@echo "... src/osvariant_status/patch.i"
 	@echo "... src/osvariant_status/patch.s"

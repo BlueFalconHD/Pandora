@@ -1,5 +1,5 @@
 #include "KernelUtilities.h"
-#include "Globals.h"
+#include "../Globals.h"
 #include "PandoraLog.h"
 
 #include <stddef.h>

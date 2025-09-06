@@ -1,8 +1,8 @@
 #include "PandoraUserClient.h"
 #include "Globals.h"
-#include "KernelUtilities.h"
-#include "PandoraLog.h"
-#include "TimeUtilities.h"
+#include "Utils/KernelUtilities.h"
+#include "Utils/PandoraLog.h"
+#include "Utils/TimeUtilities.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOReturn.h>

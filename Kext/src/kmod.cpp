@@ -1,6 +1,6 @@
 #include "Globals.h"
-#include "PandoraLog.h"
-#include "TimeUtilities.h"
+#include "Utils/PandoraLog.h"
+#include "Utils/TimeUtilities.h"
 
 #include <mach/kmod.h>
 #include <mach/mach_time.h>
