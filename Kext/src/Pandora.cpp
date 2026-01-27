@@ -13,6 +13,20 @@ bool Pandora::start(IOService *provider) {
 
   pandora_log_ensure_initialized();
 
+  // Boot-arg: pandora_enable_osvariant=1 to enable OSVariant-related logic
+  {
+    // Default: OSVariant logic disabled unless explicitly enabled
+    disable_osvariant_ = true;
+    char buf[64] = {0};
+    if (PE_parse_boot_argn("pandora_enable_osvariant", buf, sizeof(buf))) {
+      // Accept any non-empty value other than '0' as "enable"
+      bool enable_osvariant = (buf[0] != '\0' && buf[0] != '0');
+      disable_osvariant_ = !enable_osvariant;
+    }
+    PANDORA_LOG_DEFAULT("Boot-arg pandora_enable_osvariant (enabled): %s",
+                        disable_osvariant_ ? "false" : "true");
+  }
+
   // Init KU once and compute slid target
   auto st = ku_.init();
   if (st != KUErrorSuccess) {
@@ -31,20 +45,25 @@ bool Pandora::start(IOService *provider) {
 
   PANDORA_LOG_DEFAULT("VersionUtilities init succeeded");
 
-  if (!vu_.isSupportedVersion()) {
-    PANDORA_LOG_DEFAULT("Unsupported macOS version for this machine: %s",
-                        vu_.getBuildVersion());
-    goto fail;
-  }
+  if (!disable_osvariant_) {
+    if (!vu_.isSupportedVersion()) {
+      PANDORA_LOG_DEFAULT("Unsupported macOS version for this machine: %s",
+                          vu_.getBuildVersion());
+      goto fail;
+    }
 
-  vu_.getOsVariantStatusBacking(&unslid_addr_);
-  if (unslid_addr_ == 0 || unslid_addr_ == kNoHook) {
-    PANDORA_LOG_DEFAULT(
-        "Failed to get osvariant_status_backing address, cannot start Pandora");
-    goto fail;
-  }
+    vu_.getOsVariantStatusBacking(&unslid_addr_);
+    if (unslid_addr_ == 0 || unslid_addr_ == kNoHook) {
+      PANDORA_LOG_DEFAULT("Failed to get osvariant_status_backing address");
+      goto fail;
+    }
 
-  slid_addr_ = ku_.kslide(unslid_addr_);
+    slid_addr_ = ku_.kslide(unslid_addr_);
+  } else {
+    PANDORA_LOG_DEFAULT("OSVariant logic disabled (boot-arg not set or disabled)");
+    unslid_addr_ = 0;
+    slid_addr_ = 0;
+  }
 
   workloop_ = IOWorkLoop::workLoop();
   if (!workloop_) {
@@ -128,7 +147,13 @@ void Pandora::free() {
 
 void Pandora::onTimer(OSObject *owner, IOTimerEventSource *sender) {
   auto *self = OSDynamicCast(Pandora, owner);
-  if (!self || self->slid_addr_ == 0) {
+  if (!self) {
+    sender->setTimeoutUS(50'000);
+    return;
+  }
+
+  // If OSVariant logic disabled or no address, just re-arm timer
+  if (self->disable_osvariant_ || self->slid_addr_ == 0) {
     sender->setTimeoutUS(50'000);
     return;
   }

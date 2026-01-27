@@ -82,6 +82,10 @@ public:
 
   static KUError kread(uint64_t address, void *buffer, size_t size);
   static KUError kwrite(uint64_t address, const void *buffer, size_t size);
+  static KUError pread(task_t task, uint64_t address, void *buffer,
+                       size_t size);
+  static KUError pwrite(task_t task, uint64_t address, const void *buffer,
+                        size_t size);
 
   uint64_t kernelBase() const { return kernelBaseAddress; }
   uint64_t kernelSlideValue() const { return kernelSlide; }

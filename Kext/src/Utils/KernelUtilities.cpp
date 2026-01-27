@@ -140,6 +140,88 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
   return KUErrorSuccess;
 }
 
+KUError KernelUtilities::pread(task_t task, uint64_t address, void *buffer,
+                               size_t size) {
+  if (task == TASK_NULL || address == 0 || buffer == nullptr || size == 0) {
+    return KUErrorBadArgument;
+  }
+
+  IOMemoryDescriptor *memDesc = IOMemoryDescriptor::withAddressRange(
+      address, size, kIODirectionIn, task);
+  if (!memDesc) {
+    PANDORA_MEMORY_LOG_ERROR(
+        "Failed to create IOMemoryDescriptor for proc read at address 0x%llx, size %zu",
+        address, size);
+    return KUErrorMemoryAllocationFailed;
+  }
+
+  IOReturn ret = memDesc->prepare();
+  if (ret != kIOReturnSuccess) {
+    PANDORA_LOG_DEFAULT(
+        "Failed to prepare IOMemoryDescriptor for proc read at address 0x%llx, IOReturn: 0x%x",
+        address, ret);
+    memDesc->release();
+    return KUErrorMemoryPreperationFailed;
+  }
+
+  bzero(buffer, size);
+  uint64_t bytesRead = memDesc->readBytes(0, buffer, size);
+
+  if (bytesRead != size) {
+    PANDORA_LOG_DEFAULT(
+        "Proc read incomplete at address 0x%llx: expected %zu bytes, got %llu bytes",
+        address, size, bytesRead);
+    memDesc->complete();
+    memDesc->release();
+    return KUErrorNotEnoughBytesRead;
+  }
+
+  memDesc->complete();
+  memDesc->release();
+  return KUErrorSuccess;
+}
+
+KUError KernelUtilities::pwrite(task_t task, uint64_t address,
+                                const void *buffer, size_t size) {
+  if (task == TASK_NULL || address == 0 || buffer == nullptr || size == 0) {
+    return KUErrorBadArgument;
+  }
+
+  IOMemoryDescriptor *memDesc = IOMemoryDescriptor::withAddressRange(
+      address, size, kIODirectionInOut, task);
+  if (!memDesc) {
+    PANDORA_LOG_DEFAULT(
+        "Failed to create IOMemoryDescriptor for proc write at address 0x%llx, size %zu",
+        address, size);
+    return KUErrorMemoryAllocationFailed;
+  }
+
+  IOReturn ret = memDesc->prepare();
+  if (ret != kIOReturnSuccess) {
+    PANDORA_LOG_DEFAULT(
+        "Failed to prepare IOMemoryDescriptor for proc write at address 0x%llx, IOReturn: 0x%x",
+        address, ret);
+    memDesc->release();
+    return KUErrorMemoryPreperationFailed;
+  }
+
+  uint64_t bytesWritten = memDesc->writeBytes(0, buffer, size);
+  if (bytesWritten != size) {
+    PANDORA_LOG_DEFAULT(
+        "Proc write incomplete at address 0x%llx: expected %zu bytes, wrote %llu bytes",
+        address, size, bytesWritten);
+    extraerrdata1 = size;
+    extraerrdata2 = bytesWritten;
+    memDesc->complete();
+    memDesc->release();
+    return KUErrorNotEnoughBytesRead;
+  }
+
+  memDesc->complete();
+  memDesc->release();
+  return KUErrorSuccess;
+}
+
 KUError KernelUtilities::locateKernelBase(uint64_t *kernelBaseAddress,
                                           uint64_t *kernelSlide) {
 

@@ -27,6 +27,7 @@ private:
   uint64_t slid_addr_{0}; // computed once after ku_.init()
 
   uint64_t last_value_{0};
+  bool disable_osvariant_{false};
 };
 
 #endif // PANDORA_H

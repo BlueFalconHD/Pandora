@@ -21,6 +21,7 @@ static constexpr VersionEntry kVersionTable[] = {
     {"25A5346a", "Mac14,7", 0xfffffe000c527cf0ULL},
     {"25A5351b", "Mac14,7", 0xFFFFFE000C52BCF0ULL},
     {"25A5351b", "Mac15,13", 0xFFFFFE000C4C7D00ULL},
+    {"25C5048a", "Mac14,7", 0xFFFFFE000C62BD50ULL}
 };
 
 static constexpr size_t kVersionTableCount =

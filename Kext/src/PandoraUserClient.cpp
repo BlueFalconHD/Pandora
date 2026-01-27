@@ -3,6 +3,7 @@
 #include "Utils/KernelUtilities.h"
 #include "Utils/PandoraLog.h"
 #include "Utils/TimeUtilities.h"
+#include "kpi.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOReturn.h>
@@ -84,6 +85,12 @@ IOReturn PandoraUserClient::externalMethod(uint32_t selector,
       /* 3 */
       {(IOExternalMethodAction)&PandoraUserClient::getPandoraLoadMetadata, 0, 0,
        0, sizeof(PandoraMetadata)},
+      /* 4 */ {(IOExternalMethodAction)&PandoraUserClient::pread_pid, 4, 0, 0,
+               0},
+      /* 5 */ {(IOExternalMethodAction)&PandoraUserClient::pwrite_pid, 4, 0, 0,
+               0},
+      /* 6 */ {(IOExternalMethodAction)&PandoraUserClient::setProcessDebugged,
+               1, 0, 0, 0},
   };
 
   if (selector < sizeof(methods) / sizeof(methods[0])) {
@@ -188,6 +195,134 @@ IOReturn PandoraUserClient::kwrite(PandoraUserClient *client, void *reference,
         extraerrdata3);
     IOFree(buffer, len);
     return kIOReturnVMError;
+  }
+
+  return kIOReturnSuccess;
+}
+
+IOReturn PandoraUserClient::pread_pid(PandoraUserClient *client,
+                                      void *reference,
+                                      IOExternalMethodArguments *args) {
+  pid_t pid = (pid_t)args->scalarInput[0];
+  uint64_t paddr = args->scalarInput[1];
+  user_addr_t uaddr = args->scalarInput[2];
+  size_t len = args->scalarInput[3];
+
+  if (!pid || !paddr || !uaddr || !len)
+    return kIOReturnBadArgument;
+
+  proc_t p = proc_find(pid);
+  if (!p) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::pread_pid: proc_find failed for pid %d", pid);
+    return kIOReturnNotFound;
+  }
+
+  task_t t = proc_task(p);
+  if (t == TASK_NULL) {
+    proc_rele(p);
+    return kIOReturnNotFound;
+  }
+
+  void *buffer = IOMalloc(len);
+  if (!buffer) {
+    proc_rele(p);
+    return kIOReturnNoMemory;
+  }
+
+  KUError err = KernelUtilities::pread(t, paddr, buffer, len);
+  if (err != KUErrorSuccess) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::pread_pid: Failed to read %zu bytes from pid %d "
+        "addr 0x%llx: %s (%d)",
+        len, pid, paddr, get_error_name(err), err);
+    IOFree(buffer, len);
+    proc_rele(p);
+    return kIOReturnVMError;
+  }
+
+  int error = copyout(buffer, uaddr, len);
+  IOFree(buffer, len);
+  proc_rele(p);
+
+  return (error == 0) ? kIOReturnSuccess : kIOReturnVMError;
+}
+
+IOReturn PandoraUserClient::pwrite_pid(PandoraUserClient *client,
+                                       void *reference,
+                                       IOExternalMethodArguments *args) {
+  pid_t pid = (pid_t)args->scalarInput[0];
+  user_addr_t uaddr = args->scalarInput[1];
+  uint64_t paddr = args->scalarInput[2];
+  size_t len = args->scalarInput[3];
+
+  if (!pid || !paddr || !uaddr || !len)
+    return kIOReturnBadArgument;
+
+  proc_t p = proc_find(pid);
+  if (!p) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::pwrite_pid: proc_find failed for pid %d", pid);
+    return kIOReturnNotFound;
+  }
+
+  task_t t = proc_task(p);
+  if (t == TASK_NULL) {
+    proc_rele(p);
+    return kIOReturnNotFound;
+  }
+
+  void *buffer = IOMalloc(len);
+  if (!buffer) {
+    proc_rele(p);
+    return kIOReturnNoMemory;
+  }
+
+  int error = copyin(uaddr, buffer, len);
+  if (error != 0) {
+    IOFree(buffer, len);
+    proc_rele(p);
+    return kIOReturnVMError;
+  }
+
+  KUError err = KernelUtilities::pwrite(t, paddr, buffer, len);
+  IOFree(buffer, len);
+  proc_rele(p);
+
+  if (err != KUErrorSuccess) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::pwrite_pid: Failed to write %zu bytes to pid %d "
+        "addr 0x%llx: %s (%d)",
+        len, pid, paddr, get_error_name(err), err);
+    return kIOReturnVMError;
+  }
+  return kIOReturnSuccess;
+}
+
+IOReturn PandoraUserClient::setProcessDebugged(PandoraUserClient *client,
+                                               void *reference,
+                                               IOExternalMethodArguments *args) {
+  pid_t pid = (pid_t)args->scalarInput[0];
+  if (!pid) {
+    return kIOReturnBadArgument;
+  }
+
+  proc_t p = proc_find(pid);
+  if (!p) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::setProcessDebugged: proc_find failed for pid %d",
+        pid);
+    return kIOReturnNotFound;
+  }
+
+  int ok = cs_allow_invalid(p);
+  proc_rele(p);
+
+  if (!ok) {
+    PANDORA_USERCLIENT_LOG_ERROR(
+        "PandoraUserClient::setProcessDebugged: cs_allow_invalid failed for pid %d",
+        pid);
+    return kIOReturnError;
   }
 
   return kIOReturnSuccess;

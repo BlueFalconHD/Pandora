@@ -40,9 +40,17 @@ private:
                         IOExternalMethodArguments *args);
   static IOReturn kwrite(PandoraUserClient *client, void *reference,
                          IOExternalMethodArguments *args);
+  static IOReturn pread_pid(PandoraUserClient *client, void *reference,
+                            IOExternalMethodArguments *args);
+  static IOReturn pwrite_pid(PandoraUserClient *client, void *reference,
+                             IOExternalMethodArguments *args);
   static IOReturn getKernelBase(PandoraUserClient *client, void *reference,
                                 IOExternalMethodArguments *args);
   static IOReturn getPandoraLoadMetadata(PandoraUserClient *client,
                                          void *reference,
                                          IOExternalMethodArguments *args);
+
+  // Debug/CS helpers
+  static IOReturn setProcessDebugged(PandoraUserClient *client, void *reference,
+                                     IOExternalMethodArguments *args);
 };
