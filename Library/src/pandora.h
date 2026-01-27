@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mach/mach.h>
+#include <sys/types.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -46,8 +47,24 @@ kern_return_t pd_write32(uint64_t addr, uint32_t val);
 kern_return_t pd_write64(uint64_t addr, uint64_t val);
 kern_return_t pd_writebuf(uint64_t addr, const void *buf, size_t len);
 
+/* Process read/write (by PID) */
+uint8_t pd_pread8(pid_t pid, uint64_t addr);
+uint16_t pd_pread16(pid_t pid, uint64_t addr);
+uint32_t pd_pread32(pid_t pid, uint64_t addr);
+uint64_t pd_pread64(pid_t pid, uint64_t addr);
+int pd_preadbuf(pid_t pid, uint64_t addr, void *buf, size_t len);
+kern_return_t pd_pwrite8(pid_t pid, uint64_t addr, uint8_t val);
+kern_return_t pd_pwrite16(pid_t pid, uint64_t addr, uint16_t val);
+kern_return_t pd_pwrite32(pid_t pid, uint64_t addr, uint32_t val);
+kern_return_t pd_pwrite64(pid_t pid, uint64_t addr, uint64_t val);
+kern_return_t pd_pwritebuf(pid_t pid, uint64_t addr, const void *buf,
+                           size_t len);
+
 /* Kernel utilities */
 uint64_t pd_get_kernel_base();
 
 /* Metadata utilities */
 int pd_get_metadata(PandoraMetadata *metadata);
+
+/* Debugserver-like helpers */
+int pd_set_process_debugged(pid_t pid);

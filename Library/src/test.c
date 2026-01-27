@@ -11,23 +11,73 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "osvariant_status/patch.h"
-
-// for converting kern_return_t to human-readable error message
-#include "hexdump.h"
 #include <mach/error.h>
 
-#define POTENTIAL_CAVE_UNSLID 0xFFFFFE00087C1880
-
-#define ENOSYS_START_UNSLID 0xFFFFFE0008DDC77C
-#define ENOSYS_PATCH_OFF 0x4
-
-#define INSTR_ALIGN(addr) ((addr) & ~0x3ULL)
-#define INSTR_ALIGN_UP(addr) (((addr) + 3) & ~0x3ULL)
-
 #include "esym/b.h"
-#include "esym/mov.h"
-#include "esym/ret.h"
+#include "esym/nop.h"
+
+// -----------------------------------------------------------------------
+// Helpers (C, not C++): patch TBNZ -> NOP and TBZ -> B
+// -----------------------------------------------------------------------
+static bool patch_tbnz_to_nop(csh handle, uint64_t pc) {
+  printf("🔍 Patching TBNZ to NOP at 0x%llx\n", pc);
+  uint32_t original = pd_read32(pc);
+  cs_insn *insn = NULL;
+  size_t n = cs_disasm(handle, (uint8_t *)&original, 4, pc, 1, &insn);
+  if (n != 1 || insn[0].id != ARM64_INS_TBNZ) {
+    printf("    ❌ Expected TBNZ at 0x%llx, found \"%s\"\n", pc,
+           n ? insn[0].mnemonic : "???");
+    if (insn)
+      cs_free(insn, n);
+    return false;
+  }
+  printf("    🌀 Patching TBNZ @0x%llx => NOP\n", pc);
+  uint32_t nop = encode_nop();
+  pd_write32(pc, nop);
+  bool ok = (pd_read32(pc) == nop);
+  puts(ok ? "    😎 Patch OK" : "    ❌ Verification failed");
+  cs_free(insn, n);
+  return ok;
+}
+
+static bool patch_tbz_to_b(csh handle, uint64_t pc) {
+  printf("🔍 Patching TBZ to B at 0x%llx\n", pc);
+  uint32_t original = pd_read32(pc);
+  cs_insn *insn = NULL;
+  size_t n = cs_disasm(handle, (uint8_t *)&original, 4, pc, 1, &insn);
+  if (n != 1 || insn[0].id != ARM64_INS_TBZ) {
+    printf("     ❌ Expected TBZ at 0x%llx, found \"%s\"\n", pc,
+           n ? insn[0].mnemonic : "???");
+    if (insn)
+      cs_free(insn, n);
+    return false;
+  }
+  const cs_arm64 *a64 = &insn[0].detail->arm64;
+  if (a64->op_count < 3 || a64->operands[2].type != ARM64_OP_IMM) {
+    puts("    ❌ Capstone did not supply a branch target");
+    cs_free(insn, n);
+    return false;
+  }
+  uint64_t target = (uint64_t)a64->operands[2].imm;
+  if ((target & 3ULL) != 0ULL) {
+    printf("    ❌ Target 0x%llx is not word-aligned\n", target);
+    cs_free(insn, n);
+    return false;
+  }
+  uint32_t branch = encode_b_to(pc, target); /* B target */
+  printf("    🌀 Patching TBZ @0x%llx => B 0x%llx (0x%08x)\n", pc, target,
+         branch);
+  pd_write32(pc, branch);
+  bool ok = (pd_read32(pc) == branch);
+  puts(ok ? "    😎 Patch OK" : "    ❌ Verification failed");
+  cs_free(insn, n);
+  return ok;
+}
+
+// constants as provided (unslid + kslide)
+#define SUB_THREAD_SET_STATE_INTERNAL kslide(0xFFFFFE00088DCD18ULL)
+#define OFFSET_TBNZ_ENTITLEMENT_CHECK 0x44u /* TBNZ  W6,#9  */
+#define OFFSET_TBZ_THREAD_FLAG 0x4Cu        /* TBZ   W8,#31 */
 
 int main() {
   if (pd_init() == -1) {
@@ -43,73 +93,30 @@ int main() {
     return 1;
   }
 
-  uint64_t slideAddress = kslide(0xFFFFFE000C527CF0);
-  uint64_t slideValue = pd_read64(slideAddress);
-  printf("Value at slide address (0x%llx): 0x%llx\n", slideAddress, slideValue);
-
-  // write value to same address
-  const uint64_t newVal = 0x70010002f388828f;
-
-  if (slideValue != newVal) {
-    kern_return_t res = pd_write64(slideAddress, newVal);
-
-    if (res != KERN_SUCCESS) {
-      printf("Failed to write to slide address (0x%llx)\n", slideAddress);
-      printf("Error: %x\n", res);
-
-      // print human-readable error message
-      printf("Error message: %s\n", mach_error_string(res));
-
-      pd_deinit();
-      return 1;
+  printf("\nthread_set_state entitlement bypass\n"
+         "Changes vanish on reboot. Proceed?  (y/N): ");
+  char reply = 0;
+  scanf(" %c", &reply);
+  if (reply == 'y' || reply == 'Y') {
+    csh handle;
+    if (cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) != CS_ERR_OK) {
+      printf("❌ Capstone init failed\n");
+    } else {
+      cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+      bool ok1 = patch_tbnz_to_nop(handle, SUB_THREAD_SET_STATE_INTERNAL +
+                                    OFFSET_TBNZ_ENTITLEMENT_CHECK);
+      bool ok2 = patch_tbz_to_b(handle, SUB_THREAD_SET_STATE_INTERNAL +
+                                 OFFSET_TBZ_THREAD_FLAG);
+      cs_close(&handle);
+      if (ok1 && ok2) {
+        puts("🎉 All patches applied successfully!");
+      } else {
+        puts("💔 One or more patches failed.");
+      }
     }
+  } else {
+    puts("📭 Skipped thread_set_state entitlement bypass.");
   }
-
-  char *errorMessage = NULL;
-  bool res = patch_osvariant_status(&errorMessage);
-  if (!res) {
-    printf("Failed to patch osvariant status: %s\n", errorMessage);
-    free(errorMessage);
-    pd_deinit();
-    return 1;
-  }
-
-  printf("Successfully patched osvariant status!\n");
-
-  // read instruction at ENOSYS_START_UNSLID + ENOSYS_PATCH_OFF
-  uint32_t instruction = 0;
-  pd_readbuf(kslide(ENOSYS_START_UNSLID + ENOSYS_PATCH_OFF), &instruction,
-             sizeof(instruction));
-
-  uint32_t jpatch = encode_b_to(kslide(ENOSYS_START_UNSLID + ENOSYS_PATCH_OFF),
-                                INSTR_ALIGN_UP(kslide(POTENTIAL_CAVE_UNSLID)));
-  uint32_t movcc = encode_movz_w(0, 0xdead, 0);
-  uint32_t retc = encode_ret_lr();
-
-  printf("Patching ENOSYS handler:\n");
-
-  // write jpatch to kslide(ENOSYS_START_UNSLID + ENOSYS_PATCH_OFF)
-  pd_writebuf(kslide(ENOSYS_START_UNSLID + ENOSYS_PATCH_OFF), &jpatch,
-              sizeof(jpatch));
-  printf("  Wrote jpatch 0x%08x to 0x%llx\n", jpatch,
-         kslide(ENOSYS_START_UNSLID + ENOSYS_PATCH_OFF));
-
-  printf("Patching cave at 0x%llx:\n", kslide(POTENTIAL_CAVE_UNSLID));
-
-  // write movcc to kslide(POTENTIAL_CAVE_UNSLID)
-  pd_writebuf(kslide(POTENTIAL_CAVE_UNSLID), &movcc, sizeof(movcc));
-  printf("  Wrote movcc 0x%08x to 0x%llx\n", movcc,
-         kslide(POTENTIAL_CAVE_UNSLID));
-
-  // write retc to kslide(POTENTIAL_CAVE_UNSLID + 4)
-  pd_writebuf(kslide(POTENTIAL_CAVE_UNSLID + 4), &retc, sizeof(retc));
-  printf("  Wrote retc 0x%08x to 0x%llx\n", retc,
-         kslide(POTENTIAL_CAVE_UNSLID + 4));
-
-  // svc instruction which triggers ENOSYS
-  long r = syscall(8);
-
-  printf("syscall(8) => r=%ld errno=0x%lx\n", r, errno);
 
   pd_deinit();
   return 0;

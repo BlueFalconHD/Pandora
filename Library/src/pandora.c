@@ -56,6 +56,26 @@ static inline kern_return_t pandora_get_metadata(io_connect_t client,
   return IOConnectCallStructMethod(client, 3, NULL, 0, metadata, &outputSize);
 }
 
+static inline kern_return_t pandora_proc_read(io_connect_t client, pid_t pid,
+                                              uint64_t paddr, void *uaddr,
+                                              uint64_t len) {
+  uint64_t in[] = {(uint64_t)(int64_t)pid, paddr, (uint64_t)uaddr, len};
+  return IOConnectCallScalarMethod(client, 4, in, 4, NULL, NULL);
+}
+
+static inline kern_return_t pandora_proc_write(io_connect_t client, pid_t pid,
+                                               void *uaddr, uint64_t paddr,
+                                               uint64_t len) {
+  uint64_t in[] = {(uint64_t)(int64_t)pid, (uint64_t)uaddr, paddr, len};
+  return IOConnectCallScalarMethod(client, 5, in, 4, NULL, NULL);
+}
+
+static inline kern_return_t pandora_set_debugged(io_connect_t client,
+                                                 pid_t pid) {
+  uint64_t in[] = {(uint64_t)(int64_t)pid};
+  return IOConnectCallScalarMethod(client, 6, in, 1, NULL, NULL);
+}
+
 void pandora_close(io_connect_t client) { IOServiceClose(client); }
 
 int pd_init(void) {
@@ -118,6 +138,63 @@ kern_return_t pd_writebuf(uint64_t addr, const void *buf, size_t len) {
     return KERN_INVALID_ARGUMENT;
   }
   return pandora_write(gClient, (void *)buf, addr, len);
+}
+
+uint8_t pd_pread8(pid_t pid, uint64_t addr) {
+  uint8_t val = 0;
+  pandora_proc_read(gClient, pid, addr, &val, sizeof(val));
+  return val;
+}
+
+uint16_t pd_pread16(pid_t pid, uint64_t addr) {
+  uint16_t val = 0;
+  pandora_proc_read(gClient, pid, addr, &val, sizeof(val));
+  return val;
+}
+
+uint32_t pd_pread32(pid_t pid, uint64_t addr) {
+  uint32_t val = 0;
+  pandora_proc_read(gClient, pid, addr, &val, sizeof(val));
+  return val;
+}
+
+uint64_t pd_pread64(pid_t pid, uint64_t addr) {
+  uint64_t val = 0;
+  pandora_proc_read(gClient, pid, addr, &val, sizeof(val));
+  return val;
+}
+
+int pd_preadbuf(pid_t pid, uint64_t addr, void *buf, size_t len) {
+  return pandora_proc_read(gClient, pid, addr, buf, len);
+}
+
+kern_return_t pd_pwrite8(pid_t pid, uint64_t addr, uint8_t val) {
+  return pandora_proc_write(gClient, pid, &val, addr, sizeof(val));
+}
+
+kern_return_t pd_pwrite16(pid_t pid, uint64_t addr, uint16_t val) {
+  return pandora_proc_write(gClient, pid, &val, addr, sizeof(val));
+}
+
+kern_return_t pd_pwrite32(pid_t pid, uint64_t addr, uint32_t val) {
+  return pandora_proc_write(gClient, pid, &val, addr, sizeof(val));
+}
+
+kern_return_t pd_pwrite64(pid_t pid, uint64_t addr, uint64_t val) {
+  return pandora_proc_write(gClient, pid, &val, addr, sizeof(val));
+}
+
+kern_return_t pd_pwritebuf(pid_t pid, uint64_t addr, const void *buf,
+                           size_t len) {
+  if (!buf || len == 0) {
+    return KERN_INVALID_ARGUMENT;
+  }
+  return pandora_proc_write(gClient, pid, (void *)buf, addr, len);
+}
+
+int pd_set_process_debugged(pid_t pid) {
+  kern_return_t ret = pandora_set_debugged(gClient, pid);
+  return ret == KERN_SUCCESS ? 0 : -1;
 }
 
 uint64_t pd_get_kernel_base() {
