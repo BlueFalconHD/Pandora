@@ -26,7 +26,8 @@ static inline io_connect_t pandora_open(void) {
   kern_return_t ret = IOServiceOpen(service, mach_task_self(), 0, &client);
   IOObjectRelease(service);
   if (ret != KERN_SUCCESS) {
-    printf("Failed to open Pandora service: %x\n", ret);
+    printf("Failed to open Pandora service: %x (%s)\n", ret,
+           mach_error_string(ret));
     return MACH_PORT_NULL;
   }
   return client;
@@ -70,10 +71,31 @@ static inline kern_return_t pandora_proc_write(io_connect_t client, pid_t pid,
   return IOConnectCallScalarMethod(client, 5, in, 4, NULL, NULL);
 }
 
-static inline kern_return_t pandora_set_debugged(io_connect_t client,
-                                                 pid_t pid) {
-  uint64_t in[] = {(uint64_t)(int64_t)pid};
-  return IOConnectCallScalarMethod(client, 6, in, 1, NULL, NULL);
+static inline kern_return_t pandora_kcall(io_connect_t client,
+                                          uint32_t selector,
+                                          const PandoraKCallRequest *req,
+                                          PandoraKCallResponse *resp) {
+  if (!req || !resp) {
+    return KERN_INVALID_ARGUMENT;
+  }
+
+  size_t outSize = sizeof(*resp);
+  return IOConnectCallStructMethod(client, selector, req, sizeof(*req), resp,
+                                   &outSize);
+}
+
+static inline kern_return_t pandora_run_arb_func_with_task_arg_pid(
+    io_connect_t client, uint32_t selector, uint64_t funcAddr, pid_t pid,
+    uint64_t *ret0) {
+  uint64_t in[] = {funcAddr, (uint64_t)(int64_t)pid};
+  uint64_t out = 0;
+  uint32_t outCnt = 1;
+  kern_return_t kr =
+      IOConnectCallScalarMethod(client, selector, in, 2, &out, &outCnt);
+  if (kr == KERN_SUCCESS && ret0 && outCnt == 1) {
+    *ret0 = out;
+  }
+  return kr;
 }
 
 void pandora_close(io_connect_t client) { IOServiceClose(client); }
@@ -85,7 +107,9 @@ int pd_init(void) {
 
 void pd_deinit(void) {
   if (MACH_PORT_VALID(gClient)) {
+    printf("Deinitializing Pandora connection\n");
     pandora_close(gClient);
+    gClient = MACH_PORT_NULL;
   }
 }
 
@@ -192,11 +216,6 @@ kern_return_t pd_pwritebuf(pid_t pid, uint64_t addr, const void *buf,
   return pandora_proc_write(gClient, pid, (void *)buf, addr, len);
 }
 
-int pd_set_process_debugged(pid_t pid) {
-  kern_return_t ret = pandora_set_debugged(gClient, pid);
-  return ret == KERN_SUCCESS ? 0 : -1;
-}
-
 uint64_t pd_get_kernel_base() {
   uint64_t kbase = 0;
   kern_return_t ret = pandora_get_kbase(gClient, &kbase);
@@ -221,4 +240,59 @@ int pd_get_metadata(PandoraMetadata *metadata) {
   }
 
   return 0;
+}
+
+kern_return_t pd_kcall(const PandoraKCallRequest *req, PandoraKCallResponse *resp) {
+  if (!MACH_PORT_VALID(gClient)) {
+    return KERN_INVALID_CAPABILITY;
+  }
+
+  // Prefer the updated selector numbering (6/7). Fall back to the older
+  // numbering (7/8) for compatibility with older kext builds.
+  kern_return_t kr =
+      pandora_kcall(gClient, PANDORA_UC_SELECTOR_KCALL_PREFERRED, req, resp);
+  if (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported) {
+    kr = pandora_kcall(gClient, 7 /* legacy KCALL */, req, resp);
+  }
+  return kr;
+}
+
+kern_return_t pd_kcall_simple(uint64_t fn, const uint64_t *args,
+                              uint32_t argCount, uint64_t *ret0) {
+  if (argCount > 8) {
+    return KERN_INVALID_ARGUMENT;
+  }
+
+  PandoraKCallRequest req = {
+      .fn = fn,
+      .argCount = argCount,
+      .reserved = 0,
+      .args = {0},
+  };
+  for (uint32_t i = 0; i < argCount; i++) {
+    req.args[i] = args ? args[i] : 0;
+  }
+
+  PandoraKCallResponse resp = {.status = KERN_FAILURE, .ret0 = 0};
+  kern_return_t kr = pd_kcall(&req, &resp);
+  if (ret0) {
+    *ret0 = resp.ret0;
+  }
+  return (kr == KERN_SUCCESS) ? resp.status : kr;
+}
+
+kern_return_t pd_run_arb_func_with_task_arg_pid(uint64_t funcAddr, pid_t pid,
+                                                uint64_t *ret0) {
+  if (!MACH_PORT_VALID(gClient)) {
+    return KERN_INVALID_CAPABILITY;
+  }
+
+  kern_return_t kr = pandora_run_arb_func_with_task_arg_pid(
+      gClient, PANDORA_UC_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID_PREFERRED,
+      funcAddr, pid, ret0);
+  if (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported) {
+    kr = pandora_run_arb_func_with_task_arg_pid(gClient, 8 /* legacy RUN_ARB */,
+                                                funcAddr, pid, ret0);
+  }
+  return kr;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Utils/KernelCall.h"
 #include "Utils/KernelUtilities.h"
 #include "Utils/TimeUtilities.h"
 #include <IOKit/IOUserClient.h>
@@ -20,6 +21,21 @@ struct PandoraMetadata {
       user_client_init_time; // Timestamp when the last user client was
                              // initialized. 0 if not initialized yet
   bool pid1_exists; // Whether PID 1 (launchd) exists at the time of kext start
+};
+
+// Request/response for the (stubbed) kernel-call interface.
+// Note: pandora_kcall() is intentionally unimplemented and returns
+// kIOReturnUnsupported in this repo.
+struct PandoraKCallRequest {
+  uint64_t fn;       // kernel VA of function to call
+  uint32_t argCount; // number of args used (<= 8)
+  uint32_t reserved;
+  uint64_t args[8];
+};
+
+struct PandoraKCallResponse {
+  IOReturn status;
+  uint64_t ret0;
 };
 
 class PandoraUserClient : public IOUserClient {
@@ -49,8 +65,9 @@ private:
   static IOReturn getPandoraLoadMetadata(PandoraUserClient *client,
                                          void *reference,
                                          IOExternalMethodArguments *args);
-
-  // Debug/CS helpers
-  static IOReturn setProcessDebugged(PandoraUserClient *client, void *reference,
-                                     IOExternalMethodArguments *args);
+  static IOReturn kcall(PandoraUserClient *client, void *reference,
+                        IOExternalMethodArguments *args);
+  static IOReturn runArbFuncWithTaskArgPid(PandoraUserClient *client,
+                                           void *reference,
+                                           IOExternalMethodArguments *args);
 };

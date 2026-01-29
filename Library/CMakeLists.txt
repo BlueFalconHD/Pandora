@@ -32,26 +32,28 @@ if(NOT TARGET PkgConfig::CAPSTONE)
 endif()
 
 set_target_properties(pdtest PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/build"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 set(ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/entitlements.plist")
 
 if(APPLE)
     if(EXISTS "${ENTITLEMENTS}")
-        find_program(LDID_EXECUTABLE ldid)
-        if(LDID_EXECUTABLE)
+        # On macOS, prefer `codesign`. `ldid` may exist (via Homebrew) but does
+        # not produce a code signature the OS will honor for entitlement checks.
+        find_program(CODESIGN_EXECUTABLE codesign)
+        if(CODESIGN_EXECUTABLE)
             add_custom_command(TARGET pdtest POST_BUILD
-                COMMAND "${LDID_EXECUTABLE}" "-S${ENTITLEMENTS}" "$<TARGET_FILE:pdtest>"
-                COMMENT "Code signing pdtest with ldid entitlements"
+                COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - --entitlements "${ENTITLEMENTS}" "$<TARGET_FILE:pdtest>"
+                COMMENT "Code signing pdtest with codesign entitlements"
                 VERBATIM
             )
         else()
-            find_program(CODESIGN_EXECUTABLE codesign)
-            if(CODESIGN_EXECUTABLE)
+            find_program(LDID_EXECUTABLE ldid)
+            if(LDID_EXECUTABLE)
                 add_custom_command(TARGET pdtest POST_BUILD
-                    COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - --entitlements "${ENTITLEMENTS}" "$<TARGET_FILE:pdtest>"
-                    COMMENT "Code signing pdtest with codesign entitlements"
+                    COMMAND "${LDID_EXECUTABLE}" "-S${ENTITLEMENTS}" "$<TARGET_FILE:pdtest>"
+                    COMMENT "Code signing pdtest with ldid entitlements"
                     VERBATIM
                 )
             endif()

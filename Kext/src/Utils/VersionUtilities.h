@@ -13,15 +13,17 @@ struct VersionEntry {
   const char *build;            // e.g. "25A5346a"
   const char *deviceIdentifier; // e.g. "Mac14,7"
   const uintptr_t osvariant_status_backing;
+  const uintptr_t task_ro_flags_set;
+  const uintptr_t proc_task;
 };
 
 constexpr uintptr_t kNoHook = UINTPTR_MAX;
 
 static constexpr VersionEntry kVersionTable[] = {
-    {"25A5346a", "Mac14,7", 0xfffffe000c527cf0ULL},
-    {"25A5351b", "Mac14,7", 0xFFFFFE000C52BCF0ULL},
-    {"25A5351b", "Mac15,13", 0xFFFFFE000C4C7D00ULL},
-    {"25C5048a", "Mac14,7", 0xFFFFFE000C62BD50ULL}
+    {"25A5346a", "Mac14,7", 0xfffffe000c527cf0ULL, kNoHook, kNoHook},
+    {"25A5351b", "Mac14,7", 0xFFFFFE000C52BCF0ULL, kNoHook, kNoHook},
+    {"25A5351b", "Mac15,13", 0xFFFFFE000C4C7D00ULL, kNoHook, kNoHook},
+    {"25C5048a", "Mac14,7", 0xFFFFFE000C62BD50ULL, 0xFFFFFE00088C41C8ULL, 0xFFFFFE0008E02274ULL}
 };
 
 static constexpr size_t kVersionTableCount =
@@ -125,6 +127,20 @@ public:
     if (entry) {
       if (entry->osvariant_status_backing != kNoHook) {
         *data = entry->osvariant_status_backing;
+        return true;
+      }
+      *data = 0;
+      return false;
+    }
+    *data = 0;
+    return false;
+  }
+
+  bool getProcTask(uintptr_t *data) const {
+    const VersionEntry *entry = getVersionEntry();
+    if (entry) {
+      if (entry->proc_task != kNoHook) {
+        *data = entry->proc_task;
         return true;
       }
       *data = 0;

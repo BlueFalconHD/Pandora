@@ -51,3 +51,4 @@ Kext/kernelcache*
 Kext/*.i64
 Kext/*.kext
 Library/build/
+reference/

@@ -59,13 +59,13 @@ list(FILTER HEADERS EXCLUDE REGEX "src/old/.*")
 
 # Extract version from Info.plist and generate Version.h
 execute_process(
-    COMMAND /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" ${CMAKE_SOURCE_DIR}/misc/Info.plist
+    COMMAND /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" ${CMAKE_CURRENT_SOURCE_DIR}/misc/Info.plist
     OUTPUT_VARIABLE PANDORA_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 configure_file(
-    ${CMAKE_SOURCE_DIR}/src/Version.h.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Version.h.in
     ${CMAKE_BINARY_DIR}/generated/Version.h @ONLY
 )
 include_directories(${CMAKE_BINARY_DIR}/generated)
@@ -91,7 +91,7 @@ add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
 # Copy Info.plist
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_SOURCE_DIR}/misc/Info.plist"
+    "${CMAKE_CURRENT_SOURCE_DIR}/misc/Info.plist"
     "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.kext/Contents/Info.plist"
 )
 

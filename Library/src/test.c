@@ -79,7 +79,10 @@ static bool patch_tbz_to_b(csh handle, uint64_t pc) {
 #define OFFSET_TBNZ_ENTITLEMENT_CHECK 0x44u /* TBNZ  W6,#9  */
 #define OFFSET_TBZ_THREAD_FLAG 0x4Cu        /* TBZ   W8,#31 */
 
-int main() {
+typedef struct proc_t__ *kproc_t;
+typedef struct task_t__ *ktask_t;
+
+int main(int argc, char *argv[]) {
   if (pd_init() == -1) {
     printf("Failed to initialize Pandora. Is the kernel extension loaded?\n");
     return 1;
@@ -93,31 +96,91 @@ int main() {
     return 1;
   }
 
-  printf("\nthread_set_state entitlement bypass\n"
-         "Changes vanish on reboot. Proceed?  (y/N): ");
-  char reply = 0;
-  scanf(" %c", &reply);
-  if (reply == 'y' || reply == 'Y') {
-    csh handle;
-    if (cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) != CS_ERR_OK) {
-      printf("❌ Capstone init failed\n");
-    } else {
-      cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
-      bool ok1 = patch_tbnz_to_nop(handle, SUB_THREAD_SET_STATE_INTERNAL +
-                                    OFFSET_TBNZ_ENTITLEMENT_CHECK);
-      bool ok2 = patch_tbz_to_b(handle, SUB_THREAD_SET_STATE_INTERNAL +
-                                 OFFSET_TBZ_THREAD_FLAG);
-      cs_close(&handle);
-      if (ok1 && ok2) {
-        puts("🎉 All patches applied successfully!");
-      } else {
-        puts("💔 One or more patches failed.");
-      }
-    }
+  // if (getenv("PANDORA_SMOKE_KCALL")) {
+  //   uint64_t ret0 = 0;
+  //   kern_return_t kr = pd_kcall_simple(0, NULL, 0, &ret0);
+  //   printf("kcall smoke: status=0x%x ret0=0x%llx\n", kr,
+  //          (unsigned long long)ret0);
+  // }
+
+  // if (getenv("PANDORA_SMOKE_RUN_ARB")) {
+  //   uint64_t ret0 = 0;
+  //   kern_return_t kr =
+  //       pd_run_arb_func_with_task_arg_pid(0, getpid(), &ret0);
+  //   printf("run_arb smoke: status=0x%x ret0=0x%llx\n", kr,
+  //          (unsigned long long)ret0);
+  // }
+
+  // printf("\nthread_set_state entitlement bypass\n"
+  //        "Changes vanish on reboot. Proceed?  (y/N): ");
+  // char reply = 0;
+  // scanf(" %c", &reply);
+  // if (reply == 'y' || reply == 'Y') {
+  //   csh handle;
+  //   if (cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) != CS_ERR_OK) {
+  //     printf("❌ Capstone init failed\n");
+  //   } else {
+  //     cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+  //     bool ok1 = patch_tbnz_to_nop(handle, SUB_THREAD_SET_STATE_INTERNAL +
+  //                                   OFFSET_TBNZ_ENTITLEMENT_CHECK);
+  //     bool ok2 = patch_tbz_to_b(handle, SUB_THREAD_SET_STATE_INTERNAL +
+  //                                OFFSET_TBZ_THREAD_FLAG);
+  //     cs_close(&handle);
+  //     if (ok1 && ok2) {
+  //       puts("🎉 All patches applied successfully!");
+  //     } else {
+  //       puts("💔 One or more patches failed.");
+  //     }
+  //   }
+  // } else {
+  //   puts("📭 Skipped thread_set_state entitlement bypass.");
+  // }
+
+  uint64_t ret0;
+
+  pid_t tpid = getpid();
+
+  if (argc > 1) {
+    tpid = (pid_t)atoi(argv[1]);
+    printf("using pid %d from cmdline\n", tpid);
   } else {
-    puts("📭 Skipped thread_set_state entitlement bypass.");
+      printf("using self pid %d\n", tpid);
   }
 
+#define FUNC_FIND_PROC kslide(0xFFFFFE0008DFEE7CULL)
+#define FUNC_GET_ROFLAGS kslide(0xFFFFFE00088C2C10ULL)
+#define FUNC_SET_ROFLAGS_HARDEN_BIT kslide(0xFFFFFE00088C41C8ULL)
+
+#define proc_struct_size 0x7A0
+
+  kproc_t target_kproc_obj;
+
+  uint64_t args[1];
+  args[0] = (uint64_t)(int64_t)tpid;
+
+  pd_kcall_simple(FUNC_FIND_PROC, args, 1, (uint64_t *)&target_kproc_obj);
+
+  printf("found kproc obj at 0x%llx\n", (unsigned long long)target_kproc_obj);
+
+  // task for proc is (proc_ptr + proc_struct_size )
+  ktask_t ttask = (ktask_t)((uint64_t)target_kproc_obj + proc_struct_size);
+
+  printf("found task obj at 0x%llx\n", (unsigned long long)ttask);
+
+  #define TASK_STRUCT_BSDINFO_RO_OFF 0x3E8
+
+  // kread at task + bsdinfo_ro_off
+  uint64_t bsdinfo_ro = pd_read64((uint64_t)ttask + TASK_STRUCT_BSDINFO_RO_OFF);
+
+  printf("found bsdinfo_ro at 0x%llx\n", (unsigned long long)bsdinfo_ro);
+
+  uint64_t ro_proc_ptr = pd_read64(bsdinfo_ro);
+    printf("found ro_proc_ptr at 0x%llx\n", (unsigned long long)ro_proc_ptr);
+  uint64_t ro_task_ptr = pd_read64(ro_proc_ptr + sizeof(uint64_t));
+  printf("found ro_task_ptr at 0x%llx\n", (unsigned long long)ro_task_ptr);
+
   pd_deinit();
+
+  printf("deiniting pandora\n");
   return 0;
 }

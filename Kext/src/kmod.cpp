@@ -1,4 +1,5 @@
 #include "Globals.h"
+#include "Modules/ModuleSystem.h"
 #include "Utils/PandoraLog.h"
 #include "Utils/TimeUtilities.h"
 
@@ -24,6 +25,7 @@ kern_return_t finalize_cpp() {
   PANDORA_LOG_DEFAULT(
       "kmod.cpp:finalize_cpp: Shutting down Pandora kernel extension");
 
+  pandora_modules_shutdown();
   pandora_log_cleanup();
   return KERN_SUCCESS;
 }

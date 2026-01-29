@@ -20,36 +20,50 @@ L_kvtop_invalid:
     mov x0, #0
     ret
 
-/* 10 64-bit argument kernel call primitive
-extern "C" uint64_t arbitrary_call
-(
-    uint64_t func,
-    ...
-);
-*/
-_arbitrary_call:
+	/* 10 64-bit argument kernel call primitive
+	extern "C" uint64_t arbitrary_call
+	(
+	    uint64_t func,
+	    uint64_t arg0,
+	    uint64_t arg1,
+	    uint64_t arg2,
+	    uint64_t arg3,
+	    uint64_t arg4,
+	    uint64_t arg5,
+	    uint64_t arg6,
+	    uint64_t arg7,
+	    uint64_t arg8,
+	    uint64_t arg9
+	);
+	*/
+	_arbitrary_call:
+	    bti c
 
-    // Load the function pointer into X16
-    mov x16, x0
-    autia x16, sp
+	    // Load the function pointer into X16
+	    mov x16, x0
+	    xpaci x16
 
-    // Because this is a variadic function,
-    // up to 10 arguments are placed onto
-    // the stack, so we need to load them
-    // correctly for the call.
+	    // Re-map wrapper args (func, arg0..arg9) to a normal kernel call ABI:
+	    //   x0..x7 = arg0..arg7
+	    //   [sp]   = arg8, [sp+8] = arg9
+	    //
+	    // On arm64, our wrapper receives:
+	    //   x0=func, x1..x7=arg0..arg6, [sp]=arg7, [sp+8]=arg8, [sp+16]=arg9
 
-    // General purpose registers
-    ldp x0, x1, [sp]
-    ldp x2, x3, [sp, #0x10]
-    ldp x4, x5, [sp, #0x20]
-    ldp x6, x7, [sp, #0x30]
+	    ldr x17, [sp]         // arg7
+	    ldr x15, [sp, #0x8]   // arg8
+	    ldr x14, [sp, #0x10]  // arg9
 
-    // Stack arguments
-    ldp x8, x9, [sp, #0x40]
-    stp x8, x9, [sp]
+	    str x15, [sp]
+	    str x14, [sp, #0x8]
 
-    // Clear X8 and X9 before the call
-    mov x8, #0
-    mov x9, #0
+	    mov x0, x1
+	    mov x1, x2
+	    mov x2, x3
+	    mov x3, x4
+	    mov x4, x5
+	    mov x5, x6
+	    mov x6, x7
+	    mov x7, x17
 
-    br x16
+	    br x16

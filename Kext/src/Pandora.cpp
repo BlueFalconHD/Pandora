@@ -1,8 +1,12 @@
 #include "Pandora.h"
 #include "Globals.h"
+#include "Modules/ModuleSystem.h"
 #include "Utils/KernelUtilities.h"
 #include "Utils/PandoraLog.h"
+#include "Utils/TimeUtilities.h"
 #include <IOKit/IOLib.h>
+#include <IOKit/IOWorkLoop.h>
+#include <sys/proc.h>
 
 #define super IOService
 OSDefineMetaClassAndFinalStructors(Pandora, IOService);
@@ -13,56 +17,15 @@ bool Pandora::start(IOService *provider) {
 
   pandora_log_ensure_initialized();
 
-  // Boot-arg: pandora_enable_osvariant=1 to enable OSVariant-related logic
-  {
-    // Default: OSVariant logic disabled unless explicitly enabled
-    disable_osvariant_ = true;
-    char buf[64] = {0};
-    if (PE_parse_boot_argn("pandora_enable_osvariant", buf, sizeof(buf))) {
-      // Accept any non-empty value other than '0' as "enable"
-      bool enable_osvariant = (buf[0] != '\0' && buf[0] != '0');
-      disable_osvariant_ = !enable_osvariant;
-    }
-    PANDORA_LOG_DEFAULT("Boot-arg pandora_enable_osvariant (enabled): %s",
-                        disable_osvariant_ ? "false" : "true");
-  }
+  io_service_start_called = true;
+  io_service_start_time = makeCurrentTimestampPair();
 
-  // Init KU once and compute slid target
-  auto st = ku_.init();
-  if (st != KUErrorSuccess) {
-    PANDORA_LOG_DEFAULT("KernelUtilities init failed: %d", st);
-    super::stop(provider);
-    return false;
-  }
-
-  PANDORA_LOG_DEFAULT("KernelUtilities init succeeded");
-
-  if (!vu_.init()) {
-    PANDORA_LOG_DEFAULT("VersionUtilities init failed");
-    super::stop(provider);
-    return false;
-  }
-
-  PANDORA_LOG_DEFAULT("VersionUtilities init succeeded");
-
-  if (!disable_osvariant_) {
-    if (!vu_.isSupportedVersion()) {
-      PANDORA_LOG_DEFAULT("Unsupported macOS version for this machine: %s",
-                          vu_.getBuildVersion());
-      goto fail;
-    }
-
-    vu_.getOsVariantStatusBacking(&unslid_addr_);
-    if (unslid_addr_ == 0 || unslid_addr_ == kNoHook) {
-      PANDORA_LOG_DEFAULT("Failed to get osvariant_status_backing address");
-      goto fail;
-    }
-
-    slid_addr_ = ku_.kslide(unslid_addr_);
-  } else {
-    PANDORA_LOG_DEFAULT("OSVariant logic disabled (boot-arg not set or disabled)");
-    unslid_addr_ = 0;
-    slid_addr_ = 0;
+  // Track whether launchd (pid 1) exists at the time IOService starts.
+  pid1_exists = false;
+  proc_t p1 = proc_find(1);
+  if (p1) {
+    pid1_exists = true;
+    proc_rele(p1);
   }
 
   workloop_ = IOWorkLoop::workLoop();
@@ -73,33 +36,22 @@ bool Pandora::start(IOService *provider) {
 
   PANDORA_LOG_DEFAULT("IOWorkLoop created successfully");
 
-  timer_ = IOTimerEventSource::timerEventSource(this, onTimer);
-  if (!timer_) {
-    PANDORA_LOG_DEFAULT("Failed to create IOTimerEventSource");
-    goto fail;
+  pandora_modules_configure_from_boot_args();
+  {
+    IOReturn rc = pandora_modules_start(this);
+    if (rc != kIOReturnSuccess) {
+      PANDORA_LOG_DEFAULT("Module start failed: 0x%x", rc);
+      goto fail;
+    }
   }
 
-  PANDORA_LOG_DEFAULT("IOTimerEventSource created successfully");
-
-  if (workloop_->addEventSource(timer_) != kIOReturnSuccess) {
-    PANDORA_LOG_DEFAULT("Failed to add IOTimerEventSource to workloop");
-    goto fail;
-  }
-
-  PANDORA_LOG_DEFAULT("IOTimerEventSource added to workloop successfully");
-
-  timer_->setTimeoutUS(50'000); // 10 ms
   registerService();
   return true;
 
 fail:
   PANDORA_LOG_DEFAULT("Failed to start Pandora service, cleaning up resources");
 
-  if (timer_) {
-    PANDORA_LOG_DEFAULT("Cleaning up timer event source");
-    timer_->release();
-    timer_ = nullptr;
-  }
+  pandora_modules_stop(this);
   if (workloop_) {
     PANDORA_LOG_DEFAULT("Cleaning up workloop");
     workloop_->release();
@@ -113,13 +65,7 @@ fail:
 void Pandora::stop(IOService *provider) {
   PANDORA_LOG_DEFAULT("Stopping Pandora service");
 
-  if (timer_) {
-    timer_->cancelTimeout();
-    if (workloop_)
-      workloop_->removeEventSource(timer_);
-    timer_->release();
-    timer_ = nullptr;
-  }
+  pandora_modules_stop(this);
   if (workloop_) {
     workloop_->release();
     workloop_ = nullptr;
@@ -129,60 +75,5 @@ void Pandora::stop(IOService *provider) {
 }
 
 void Pandora::free() {
-  PANDORA_LOG_DEFAULT("Freeing Pandora service");
-
-  if (timer_) {
-    timer_->cancelTimeout();
-    if (workloop_)
-      workloop_->removeEventSource(timer_);
-    timer_->release();
-    timer_ = nullptr;
-  }
-  if (workloop_) {
-    workloop_->release();
-    workloop_ = nullptr;
-  }
   super::free();
-}
-
-void Pandora::onTimer(OSObject *owner, IOTimerEventSource *sender) {
-  auto *self = OSDynamicCast(Pandora, owner);
-  if (!self) {
-    sender->setTimeoutUS(50'000);
-    return;
-  }
-
-  // If OSVariant logic disabled or no address, just re-arm timer
-  if (self->disable_osvariant_ || self->slid_addr_ == 0) {
-    sender->setTimeoutUS(50'000);
-    return;
-  }
-
-  uint64_t val = 0;
-  auto rc = KernelUtilities::kread(self->slid_addr_, &val, sizeof(val));
-  if (rc == KUErrorSuccess) {
-    if (val != self->last_value_) {
-      PANDORA_LOG_DEFAULT("Value changed: 0x%016llx -> 0x%016llx",
-                          (unsigned long long)self->last_value_,
-                          (unsigned long long)val);
-      self->last_value_ = val;
-    }
-    // PANDORA_LOG_DEFAULT("kread succeeded: 0x%016llx", (unsigned long
-    // long)val);
-    if (val == 0) {
-      PANDORA_LOG_DEFAULT("Performing kwrite when see 0...");
-      uint64_t newVal = 0x70010000f38882cf;
-      rc = KernelUtilities::kwrite(self->slid_addr_, &newVal, sizeof(newVal));
-      if (rc == KUErrorSuccess) {
-        PANDORA_LOG_DEFAULT("kwrite succeeded");
-      } else {
-        PANDORA_LOG_DEFAULT("kwrite failed: %d", rc);
-      }
-      workloopsaw0 = true;
-    }
-  } else {
-    PANDORA_LOG_DEFAULT("kread failed: %d", rc);
-  }
-
-  sender->setTimeoutUS(50'000); // re-arm
 }

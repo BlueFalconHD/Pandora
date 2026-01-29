@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mach/mach.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -24,6 +25,37 @@ typedef struct {
                              // initialized. 0 if not initialized yet
   bool pid1_exists; // Whether PID 1 (launchd) exists at the time of kext start
 } PandoraMetadata;
+
+// ---------------------------------------------------------------------------
+// UserClient method selectors
+//
+// Note: The Kext and Library historically drifted on selector numbering.
+// The library wrappers for newer methods will try both the "legacy" and
+// "preferred" selector numbers at runtime to stay compatible.
+// ---------------------------------------------------------------------------
+typedef enum {
+  PANDORA_UC_SELECTOR_KREAD = 0,
+  PANDORA_UC_SELECTOR_KWRITE = 1,
+  PANDORA_UC_SELECTOR_GET_KERNEL_BASE = 2,
+  PANDORA_UC_SELECTOR_GET_METADATA = 3,
+  PANDORA_UC_SELECTOR_PREAD_PID = 4,
+  PANDORA_UC_SELECTOR_PWRITE_PID = 5,
+  PANDORA_UC_SELECTOR_KCALL_PREFERRED = 6,
+  PANDORA_UC_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID_PREFERRED = 7,
+} PandoraUserClientSelector;
+
+// Request/response for the kernel-call interface.
+typedef struct {
+  uint64_t fn;       // kernel VA of function to call
+  uint32_t argCount; // number of args used (<= 8)
+  uint32_t reserved;
+  uint64_t args[8];
+} PandoraKCallRequest;
+
+typedef struct {
+  kern_return_t status;
+  uint64_t ret0;
+} PandoraKCallResponse;
 
 extern uint64_t pd_kbase;
 extern uint64_t pd_kslide;
@@ -66,5 +98,9 @@ uint64_t pd_get_kernel_base();
 /* Metadata utilities */
 int pd_get_metadata(PandoraMetadata *metadata);
 
-/* Debugserver-like helpers */
-int pd_set_process_debugged(pid_t pid);
+/* Newer userclient methods */
+kern_return_t pd_kcall(const PandoraKCallRequest *req, PandoraKCallResponse *resp);
+kern_return_t pd_kcall_simple(uint64_t fn, const uint64_t *args, uint32_t argCount,
+                              uint64_t *ret0);
+kern_return_t pd_run_arb_func_with_task_arg_pid(uint64_t funcAddr, pid_t pid,
+                                                uint64_t *ret0);

@@ -1,5 +1,7 @@
 #include "PandoraUserClient.h"
 #include "Globals.h"
+#include "Modules/HwAccessModule.h"
+#include "Utils/KernelCall.h"
 #include "Utils/KernelUtilities.h"
 #include "Utils/PandoraLog.h"
 #include "Utils/TimeUtilities.h"
@@ -27,6 +29,11 @@ bool PandoraUserClient::initWithTask(task_t owningTask, void *securityID,
   }
 
   pandora_log_ensure_initialized();
+
+  if (!pandora_hw_access_active()) {
+    PANDORA_LOG_DEFAULT("PandoraUserClient::initWithTask: hw_access module is disabled");
+    return false;
+  }
 
   PANDORA_LOG_DEFAULT("PandoraUserClient::initWithTask: Initializing Pandora "
                       "User Client with task %p, security ID %p, type %u",
@@ -77,6 +84,10 @@ IOReturn PandoraUserClient::externalMethod(uint32_t selector,
                                            IOExternalMethodArguments *args,
                                            IOExternalMethodDispatch *dispatch,
                                            OSObject *target, void *reference) {
+  if (!pandora_hw_access_active()) {
+    return kIOReturnNotPermitted;
+  }
+
   static const IOExternalMethodDispatch methods[] = {
       /* 0 */ {(IOExternalMethodAction)&PandoraUserClient::kread, 3, 0, 0, 0},
       /* 1 */ {(IOExternalMethodAction)&PandoraUserClient::kwrite, 3, 0, 0, 0},
@@ -89,8 +100,9 @@ IOReturn PandoraUserClient::externalMethod(uint32_t selector,
                0},
       /* 5 */ {(IOExternalMethodAction)&PandoraUserClient::pwrite_pid, 4, 0, 0,
                0},
-      /* 6 */ {(IOExternalMethodAction)&PandoraUserClient::setProcessDebugged,
-               1, 0, 0, 0},
+      /* 7 */ {(IOExternalMethodAction)&PandoraUserClient::kcall, 0,
+               sizeof(PandoraKCallRequest), 0, sizeof(PandoraKCallResponse)},
+      /* 8 */ {(IOExternalMethodAction)&PandoraUserClient::runArbFuncWithTaskArgPid, 2, 0, 1, 0},
   };
 
   if (selector < sizeof(methods) / sizeof(methods[0])) {
@@ -99,6 +111,36 @@ IOReturn PandoraUserClient::externalMethod(uint32_t selector,
   }
 
   return super::externalMethod(selector, args, dispatch, target, reference);
+}
+
+IOReturn PandoraUserClient::kcall(PandoraUserClient *client, void *reference,
+                                  IOExternalMethodArguments *args) {
+  (void)client;
+  (void)reference;
+
+  if (!args || !args->structureInput || args->structureInputSize < sizeof(PandoraKCallRequest) ||
+      !args->structureOutput || args->structureOutputSize < sizeof(PandoraKCallResponse)) {
+    return kIOReturnBadArgument;
+  }
+
+  const auto *req =
+      static_cast<const PandoraKCallRequest *>(args->structureInput);
+
+  if (req->argCount > 8) {
+    return kIOReturnBadArgument;
+  }
+
+  PandoraKCallResult res = pandora_kcall(req->fn, req->args, req->argCount);
+
+  PandoraKCallResponse out = {
+      .status = res.status,
+      .ret0 = res.ret0,
+  };
+
+  memcpy(args->structureOutput, &out, sizeof(out));
+  args->structureOutputSize = sizeof(out);
+
+  return kIOReturnSuccess;
 }
 
 IOReturn PandoraUserClient::kread(PandoraUserClient *client, void *reference,
@@ -299,35 +341,6 @@ IOReturn PandoraUserClient::pwrite_pid(PandoraUserClient *client,
   return kIOReturnSuccess;
 }
 
-IOReturn PandoraUserClient::setProcessDebugged(PandoraUserClient *client,
-                                               void *reference,
-                                               IOExternalMethodArguments *args) {
-  pid_t pid = (pid_t)args->scalarInput[0];
-  if (!pid) {
-    return kIOReturnBadArgument;
-  }
-
-  proc_t p = proc_find(pid);
-  if (!p) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::setProcessDebugged: proc_find failed for pid %d",
-        pid);
-    return kIOReturnNotFound;
-  }
-
-  int ok = cs_allow_invalid(p);
-  proc_rele(p);
-
-  if (!ok) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::setProcessDebugged: cs_allow_invalid failed for pid %d",
-        pid);
-    return kIOReturnError;
-  }
-
-  return kIOReturnSuccess;
-}
-
 IOReturn PandoraUserClient::getKernelBase(PandoraUserClient *client,
                                           void *reference,
                                           IOExternalMethodArguments *args) {
@@ -386,4 +399,30 @@ PandoraUserClient::getPandoraLoadMetadata(PandoraUserClient *client,
       metadata.pid1_exists ? "true" : "false");
 
   return kIOReturnSuccess;
+}
+
+IOReturn
+PandoraUserClient::runArbFuncWithTaskArgPid(PandoraUserClient *client,
+                                          void *reference,
+                                          IOExternalMethodArguments *args) {
+    uint64_t funcAddr = args->scalarInput[0];
+    pid_t pid = (pid_t)args->scalarInput[1];
+
+    if (!funcAddr || !pid)
+        return kIOReturnBadArgument;
+    proc_t p = proc_find(pid);
+    if (!p) {
+        PANDORA_USERCLIENT_LOG_ERROR(
+            "PandoraUserClient::runArbFuncWithTaskArgPid: proc_find failed for pid %d", pid);
+        return kIOReturnNotFound;
+    }
+    task_t t = proc_task(p);
+    if (t == TASK_NULL) {
+        proc_rele(p);
+        return kIOReturnNotFound;
+    }
+    PandoraKCallResult res = pandora_kcall(funcAddr, (uint64_t *)&t, 1);
+    proc_rele(p);
+    args->scalarOutput[0] = res.ret0;
+    return res.status;
 }
