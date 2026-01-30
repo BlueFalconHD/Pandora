@@ -148,10 +148,14 @@ int main(int argc, char *argv[]) {
   }
 
 #define FUNC_FIND_PROC kslide(0xFFFFFE0008DFEE7CULL)
+#define FUNC_RELE_PROC kslide(0xFFFFFE0008DFF518ULL)
+
 #define FUNC_GET_ROFLAGS kslide(0xFFFFFE00088C2C10ULL)
 #define FUNC_SET_ROFLAGS_HARDEN_BIT kslide(0xFFFFFE00088C41C8ULL)
 
-#define proc_struct_size 0x7A0
+#define PROC_OFF_TO_RO_POINTER 0x18
+#define TASK_OFF_TO_RO_POINTER 0x3a8
+#define PROC_STRUCT_SIZE 0x7A0
 
   kproc_t target_kproc_obj;
 
@@ -159,25 +163,20 @@ int main(int argc, char *argv[]) {
   args[0] = (uint64_t)(int64_t)tpid;
 
   pd_kcall_simple(FUNC_FIND_PROC, args, 1, (uint64_t *)&target_kproc_obj);
+  printf("found process structure at 0x%llx\n", (unsigned long long)target_kproc_obj);
 
-  printf("found kproc obj at 0x%llx\n", (unsigned long long)target_kproc_obj);
+  uint64_t proc_struct_ro_ptr =
+      pd_read64((uint64_t)target_kproc_obj + PROC_OFF_TO_RO_POINTER);
+  printf("found proc ro struct ptr: 0x%llx\n",
+         (unsigned long long)proc_struct_ro_ptr);
 
-  // task for proc is (proc_ptr + proc_struct_size )
-  ktask_t ttask = (ktask_t)((uint64_t)target_kproc_obj + proc_struct_size);
+  ktask_t ttask = (ktask_t)((uint64_t)target_kproc_obj + PROC_STRUCT_SIZE);
+  printf("found task structure at 0x%llx\n", (unsigned long long)ttask);
 
-  printf("found task obj at 0x%llx\n", (unsigned long long)ttask);
-
-  #define TASK_STRUCT_BSDINFO_RO_OFF 0x3E8
-
-  // kread at task + bsdinfo_ro_off
-  uint64_t bsdinfo_ro = pd_read64((uint64_t)ttask + TASK_STRUCT_BSDINFO_RO_OFF);
-
-  printf("found bsdinfo_ro at 0x%llx\n", (unsigned long long)bsdinfo_ro);
-
-  uint64_t ro_proc_ptr = pd_read64(bsdinfo_ro);
-    printf("found ro_proc_ptr at 0x%llx\n", (unsigned long long)ro_proc_ptr);
-  uint64_t ro_task_ptr = pd_read64(ro_proc_ptr + sizeof(uint64_t));
-  printf("found ro_task_ptr at 0x%llx\n", (unsigned long long)ro_task_ptr);
+  // call proc_rele
+  args[0] = (uint64_t)(int64_t)target_kproc_obj;
+  pd_kcall_simple(FUNC_RELE_PROC, args, 1, NULL);
+  printf("released process structure\n");
 
   pd_deinit();
 
