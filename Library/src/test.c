@@ -64,116 +64,117 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  pid_t targetPid = getpid();
+  pid_t target_pid = getpid();
   if (argc < 2) {
-    printf("using self pid %d\n", targetPid);
+    printf("using self pid %d\n", target_pid);
   } else {
-    targetPid = (pid_t)atoi(argv[1]);
-    printf("using pid %d from cmdline\n", targetPid);
+    target_pid = (pid_t)atoi(argv[1]);
+    printf("using pid %d from cmdline\n", target_pid);
   }
 
-  uint64_t kcallArgs[1] = {0};
+  uint64_t kcall_args[1] = {0};
 
   uint64_t kproc = 0;
-  kcallArgs[0] = (uint64_t)(int64_t)targetPid;
-  (void)pd_kcall_simple(FUNC_PROC_FIND, kcallArgs, 1, &kproc);
+  kcall_args[0] = (uint64_t)(int64_t)target_pid;
+  (void)pd_kcall_simple(FUNC_PROC_FIND, kcall_args, 1, &kproc);
   if (!kproc) {
-    printf("proc_find returned NULL for pid %d\n", targetPid);
+    printf("proc_find returned NULL for pid %d\n", target_pid);
     pd_deinit();
     return 1;
   }
 
-  uint64_t procStructSize = pd_read64(PROC_STRUCT_SIZE_PTR);
-  if (!procStructSize) {
-    procStructSize = PROC_STRUCT_SIZE_DEFAULT;
+  uint64_t proc_struct_size = pd_read64(PROC_STRUCT_SIZE_PTR);
+  if (!proc_struct_size) {
+    proc_struct_size = PROC_STRUCT_SIZE_DEFAULT;
   }
-  if (procStructSize > PROC_STRUCT_SIZE_MAX) {
+  if (proc_struct_size > PROC_STRUCT_SIZE_MAX) {
     printf("unexpected proc struct size: 0x%llx\n",
-           (unsigned long long)procStructSize);
-    procStructSize = PROC_STRUCT_SIZE_DEFAULT;
+           (unsigned long long)proc_struct_size);
+    proc_struct_size = PROC_STRUCT_SIZE_DEFAULT;
   }
 
-  uint8_t procFlags = pd_read8(kproc + PROC_OFF_FLAGS);
-  uint64_t computedKtask =
-      (procFlags & 2) ? (kproc + procStructSize) : 0;
+  uint8_t proc_flags = pd_read8(kproc + PROC_OFF_FLAGS);
+  uint64_t computed_ktask =
+      (proc_flags & 2) ? (kproc + proc_struct_size) : 0;
 
-  uint64_t kernelKtask = 0;
-  kcallArgs[0] = kproc;
-  (void)pd_kcall_simple(FUNC_PROC_TASK, kcallArgs, 1, &kernelKtask);
-  if (kernelKtask != computedKtask) {
+  uint64_t kernel_ktask = 0;
+  kcall_args[0] = kproc;
+  (void)pd_kcall_simple(FUNC_PROC_TASK, kcall_args, 1, &kernel_ktask);
+  if (kernel_ktask != computed_ktask) {
     printf("proc_task mismatch:\n\tcomputed: 0x%llx\n\tkernel:   0x%llx\n",
-           (unsigned long long)computedKtask,
-           (unsigned long long)kernelKtask);
+           (unsigned long long)computed_ktask,
+           (unsigned long long)kernel_ktask);
   }
 
-  uint64_t procRoPtr = pd_read64(kproc + PROC_OFF_RO_PTR);
+  uint64_t proc_ro_ptr = pd_read64(kproc + PROC_OFF_RO_PTR);
 
-  if (computedKtask) {
-    uint64_t taskRoPtr = pd_read64(computedKtask + TASK_OFF_RO_PTR);
+  if (computed_ktask) {
+    uint64_t task_ro_ptr = pd_read64(computed_ktask + TASK_OFF_RO_PTR);
     printf("kproc @ 0x%llx:\n\tro_ptr: 0x%llx\nktask @ 0x%llx:\n\tro_ptr: 0x%llx\n",
            (unsigned long long)kproc,
-           (unsigned long long)procRoPtr,
-           (unsigned long long)computedKtask,
-           (unsigned long long)taskRoPtr);
+           (unsigned long long)proc_ro_ptr,
+           (unsigned long long)computed_ktask,
+           (unsigned long long)task_ro_ptr);
   } else {
     printf("kproc @ 0x%llx:\n\tro_ptr: 0x%llx\nktask: <none> (proc+0x%x flags=0x%02x)\n",
            (unsigned long long)kproc,
-           (unsigned long long)procRoPtr,
+           (unsigned long long)proc_ro_ptr,
            (unsigned int)PROC_OFF_FLAGS,
-           (unsigned int)procFlags);
+           (unsigned int)proc_flags);
   }
 
-  uint64_t roForProc = 0;
-  kcallArgs[0] = kproc;
-  (void)pd_kcall_simple(FUNC_RO_FOR_PROC, kcallArgs, 1, &roForProc);
-  printf("ro for proc 0x%llx: 0x%llx\n", (unsigned long long)computedKtask,
-         (unsigned long long)roForProc);
+  uint64_t ro_for_proc = 0;
+  kcall_args[0] = kproc;
+  (void)pd_kcall_simple(FUNC_RO_FOR_PROC, kcall_args, 1, &ro_for_proc);
+  printf("ro for proc kproc=0x%llx: 0x%llx\n",
+         (unsigned long long)kproc,
+         (unsigned long long)ro_for_proc);
 
   bool proc_ro_valid = true;
   bool task_ro_valid = true;
 
   printf("Validating proc_ro region...\n");
-  if (!procRoPtr) {
+  if (!proc_ro_ptr) {
     printf("\tproc_ro_ptr is NULL\n");
   } else {
-    uint64_t procRoProc = pd_read64(procRoPtr);
-    uint64_t procRoTask = pd_read64(procRoPtr + 8);
+    uint64_t proc_ro_proc = pd_read64(proc_ro_ptr);
+    uint64_t proc_ro_task = pd_read64(proc_ro_ptr + 8);
     printf("\tproc_ro raw: proc=0x%llx task=0x%llx\n",
-           (unsigned long long)procRoProc,
-           (unsigned long long)procRoTask);
-    if (procRoProc != kproc) {
+           (unsigned long long)proc_ro_proc,
+           (unsigned long long)proc_ro_task);
+    if (proc_ro_proc != kproc) {
       printf("\tInvalid proc ro region: proc_ro_proc != kproc\n\tInvalid proc ro region: 0x%llx != 0x%llx\n",
-             (unsigned long long)procRoProc,
+             (unsigned long long)proc_ro_proc,
              (unsigned long long)kproc);
       proc_ro_valid = false;
     }
-    if (procRoTask != computedKtask) {
+    if (proc_ro_task != computed_ktask) {
       printf("\tInvalid proc ro region: proc_ro_task != ktask\n\tInvalid proc ro region: 0x%llx != 0x%llx\n",
-             (unsigned long long)procRoTask,
-             (unsigned long long)computedKtask);
+             (unsigned long long)proc_ro_task,
+             (unsigned long long)computed_ktask);
       proc_ro_valid = false;
     }
   }
 
-  if (computedKtask) {
+  if (computed_ktask) {
     printf("Validating task_ro region...\n");
-    uint64_t taskRoPtr = pd_read64(computedKtask + TASK_OFF_RO_PTR);
-    if (taskRoPtr) {
-      uint64_t taskRoProc = pd_read64(taskRoPtr);
-      uint64_t taskRoTask = pd_read64(taskRoPtr + 8);
+    uint64_t task_ro_ptr = pd_read64(computed_ktask + TASK_OFF_RO_PTR);
+    if (task_ro_ptr) {
+      uint64_t task_ro_proc = pd_read64(task_ro_ptr);
+      uint64_t task_ro_task = pd_read64(task_ro_ptr + 8);
       printf("\ttask_ro raw: proc=0x%llx task=0x%llx\n",
-             (unsigned long long)taskRoProc,
-             (unsigned long long)taskRoTask);
-      if (taskRoProc != kproc) {
+             (unsigned long long)task_ro_proc,
+             (unsigned long long)task_ro_task);
+      if (task_ro_proc != kproc) {
         printf("\tInvalid task ro region: task_ro_proc != kproc\n\tInvalid task ro region: 0x%llx != 0x%llx\n",
-               (unsigned long long)taskRoProc,
+               (unsigned long long)task_ro_proc,
                (unsigned long long)kproc);
         proc_ro_valid = false;
       }
-      if (taskRoTask != computedKtask) {
+      if (task_ro_task != computed_ktask) {
         printf("\tInvalid task ro region: task_ro_task != ktask\n\tInvalid task ro region: 0x%llx != 0x%llx\n",
-               (unsigned long long)taskRoTask,
-               (unsigned long long)computedKtask);
+               (unsigned long long)task_ro_task,
+               (unsigned long long)computed_ktask);
         proc_ro_valid = false;
       }
     } else {
@@ -182,13 +183,13 @@ int main(int argc, char *argv[]) {
   }
 
   if (proc_ro_valid || task_ro_valid) {
-      dump_ro_info(procRoPtr); // prefer proc ro ptr for convenience
+    dump_ro_info(proc_ro_ptr); // prefer proc ro ptr for convenience
   } else {
-      printf("Neither proc_ro nor task_ro regions are valid!\n");
+    printf("Neither proc_ro nor task_ro regions are valid!\n");
   }
 
-  kcallArgs[0] = kproc;
-  (void)pd_kcall_simple(FUNC_PROC_RELE, kcallArgs, 1, NULL);
+  kcall_args[0] = kproc;
+  (void)pd_kcall_simple(FUNC_PROC_RELE, kcall_args, 1, NULL);
   printf("released process structure\n");
 
   pd_deinit();
