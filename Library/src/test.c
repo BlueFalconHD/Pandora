@@ -31,10 +31,24 @@
 void dump_ro_info(uint64_t addr) {
     uint8_t buf[sizeof(proc_ro_0_t)];
     int err = pd_readbuf(addr, buf, sizeof(buf));
+    if (err != 0) {
+      printf("pd_readbuf(0x%llx) failed: %d\n", (unsigned long long)addr, err);
+      return;
+    }
 
     proc_ro_0_t *proc_ro = (proc_ro_0_t *)&buf;
-    printf("proc_ro ro_flags: 0x%x\n", proc_ro->task_data.t_flags_ro);
-    printf("proc_ro cs_flags: 0x%x\n", proc_ro->proc_data.p_csflags);
+    char t_flags_desc[512];
+    char cs_flags_desc[1024];
+    printf("proc_ro ro_flags: 0x%x (%s)\n",
+           proc_ro->task_data.t_flags_ro,
+           proc_ro_t_flags_ro_description(proc_ro->task_data.t_flags_ro,
+                                          t_flags_desc,
+                                          sizeof(t_flags_desc)));
+    printf("proc_ro cs_flags: 0x%x (%s)\n",
+           proc_ro->proc_data.p_csflags,
+           proc_ro_p_csflags_description(proc_ro->proc_data.p_csflags,
+                                         cs_flags_desc,
+                                         sizeof(cs_flags_desc)));
 
 }
 
