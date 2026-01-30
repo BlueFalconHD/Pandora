@@ -13,63 +13,143 @@
 
 #include <mach/error.h>
 
-typedef struct proc_t__ *kproc_t;
-typedef struct task_t__ *ktask_t;
-
 int main(int argc, char *argv[]) {
   if (pd_init() == -1) {
     printf("Failed to initialize Pandora. Is the kernel extension loaded?\n");
     return 1;
   }
 
-  uint64_t kernelBase = pd_get_kernel_base();
-
-  if (kernelBase == 0) {
+  if (!pd_get_kernel_base()) {
     printf("Failed to get kernel base address. Make sure SIP is disabled.\n");
     pd_deinit();
     return 1;
   }
 
-  uint64_t ret0;
-
-  pid_t tpid = getpid();
-
-  if (argc > 1) {
-    tpid = (pid_t)atoi(argv[1]);
-    printf("using pid %d from cmdline\n", tpid);
+  pid_t targetPid = getpid();
+  if (argc < 2) {
+    printf("using self pid %d\n", targetPid);
   } else {
-      printf("using self pid %d\n", tpid);
+    targetPid = (pid_t)atoi(argv[1]);
+    printf("using pid %d from cmdline\n", targetPid);
   }
 
-#define FUNC_FIND_PROC kslide(0xFFFFFE0008DFEE7CULL)
-#define FUNC_RELE_PROC kslide(0xFFFFFE0008DFF518ULL)
+#define FUNC_PROC_FIND kslide(0xFFFFFE0008DFEE7CULL)
+#define FUNC_PROC_RELE kslide(0xFFFFFE0008DFF518ULL)
+#define FUNC_PROC_TASK kslide(0xFFFFFE0008E02274ULL)
+#define FUNC_RO_FOR_PROC kslide(0xFFFFFE0008E010C0ULL)
 
-#define FUNC_GET_ROFLAGS kslide(0xFFFFFE00088C2C10ULL)
-#define FUNC_SET_ROFLAGS_HARDEN_BIT kslide(0xFFFFFE00088C41C8ULL)
+#define PROC_STRUCT_SIZE_PTR kslide(0xFFFFFE000C551C30ULL)
+#define PROC_STRUCT_SIZE_DEFAULT 0x7A0ULL
+#define PROC_STRUCT_SIZE_MAX 0x10000ULL
 
-#define PROC_OFF_TO_RO_POINTER 0x18
-#define TASK_OFF_TO_RO_POINTER 0x3e8
-#define PROC_STRUCT_SIZE 0x7A0
+#define PROC_OFF_RO_PTR 0x18ULL
+#define PROC_OFF_FLAGS 0x468ULL
+#define TASK_OFF_RO_PTR 0x3E8ULL
 
-  kproc_t target_kproc_obj;
+  uint64_t kcallArgs[1] = {0};
 
-  uint64_t args[1];
-  args[0] = (uint64_t)(int64_t)tpid;
+  uint64_t kproc = 0;
+  kcallArgs[0] = (uint64_t)(int64_t)targetPid;
+  (void)pd_kcall_simple(FUNC_PROC_FIND, kcallArgs, 1, &kproc);
+  if (!kproc) {
+    printf("proc_find returned NULL for pid %d\n", targetPid);
+    pd_deinit();
+    return 1;
+  }
 
-  pd_kcall_simple(FUNC_FIND_PROC, args, 1, (uint64_t *)&target_kproc_obj);
-  printf("found process structure at 0x%llx\n", (unsigned long long)target_kproc_obj);
+  uint64_t procStructSize = pd_read64(PROC_STRUCT_SIZE_PTR);
+  if (!procStructSize) {
+    procStructSize = PROC_STRUCT_SIZE_DEFAULT;
+  }
+  if (procStructSize > PROC_STRUCT_SIZE_MAX) {
+    printf("unexpected proc struct size: 0x%llx\n",
+           (unsigned long long)procStructSize);
+    procStructSize = PROC_STRUCT_SIZE_DEFAULT;
+  }
 
-  uint64_t proc_struct_ro_ptr =
-      pd_read64((uint64_t)target_kproc_obj + PROC_OFF_TO_RO_POINTER);
-  printf("found proc ro struct ptr: 0x%llx\n",
-         (unsigned long long)proc_struct_ro_ptr);
+  uint8_t procFlags = pd_read8(kproc + PROC_OFF_FLAGS);
+  uint64_t computedKtask =
+      (procFlags & 2) ? (kproc + procStructSize) : 0;
 
-  ktask_t ttask = (ktask_t)((uint64_t)target_kproc_obj + PROC_STRUCT_SIZE);
-  printf("found task structure at 0x%llx\n", (unsigned long long)ttask);
+  uint64_t kernelKtask = 0;
+  kcallArgs[0] = kproc;
+  (void)pd_kcall_simple(FUNC_PROC_TASK, kcallArgs, 1, &kernelKtask);
+  if (kernelKtask != computedKtask) {
+    printf("proc_task mismatch:\n\tcomputed: 0x%llx\n\tkernel:   0x%llx\n",
+           (unsigned long long)computedKtask,
+           (unsigned long long)kernelKtask);
+  }
 
-  // call proc_rele
-  args[0] = (uint64_t)(int64_t)target_kproc_obj;
-  pd_kcall_simple(FUNC_RELE_PROC, args, 1, NULL);
+  uint64_t procRoPtr = pd_read64(kproc + PROC_OFF_RO_PTR);
+
+  if (computedKtask) {
+    uint64_t taskRoPtr = pd_read64(computedKtask + TASK_OFF_RO_PTR);
+    printf("kproc @ 0x%llx:\n\tro_ptr: 0x%llx\nktask @ 0x%llx:\n\tro_ptr: 0x%llx\n",
+           (unsigned long long)kproc,
+           (unsigned long long)procRoPtr,
+           (unsigned long long)computedKtask,
+           (unsigned long long)taskRoPtr);
+  } else {
+    printf("kproc @ 0x%llx:\n\tro_ptr: 0x%llx\nktask: <none> (proc+0x%x flags=0x%02x)\n",
+           (unsigned long long)kproc,
+           (unsigned long long)procRoPtr,
+           (unsigned int)PROC_OFF_FLAGS,
+           (unsigned int)procFlags);
+  }
+
+  uint64_t roForProc = 0;
+  kcallArgs[0] = kproc;
+  (void)pd_kcall_simple(FUNC_RO_FOR_PROC, kcallArgs, 1, &roForProc);
+  printf("ro for proc 0x%llx: 0x%llx\n", (unsigned long long)computedKtask,
+         (unsigned long long)roForProc);
+
+  printf("Validating proc_ro region...\n");
+  if (!procRoPtr) {
+    printf("\tproc_ro_ptr is NULL\n");
+  } else {
+    uint64_t procRoProc = pd_read64(procRoPtr);
+    uint64_t procRoTask = pd_read64(procRoPtr + 8);
+    printf("\tproc_ro raw: proc=0x%llx task=0x%llx\n",
+           (unsigned long long)procRoProc,
+           (unsigned long long)procRoTask);
+    if (procRoProc != kproc) {
+      printf("\tInvalid proc ro region: proc_ro_proc != kproc\n\tInvalid proc ro region: 0x%llx != 0x%llx\n",
+             (unsigned long long)procRoProc,
+             (unsigned long long)kproc);
+    }
+    if (procRoTask != computedKtask) {
+      printf("\tInvalid proc ro region: proc_ro_task != ktask\n\tInvalid proc ro region: 0x%llx != 0x%llx\n",
+             (unsigned long long)procRoTask,
+             (unsigned long long)computedKtask);
+    }
+  }
+
+  if (computedKtask) {
+    printf("Validating task_ro region...\n");
+    uint64_t taskRoPtr = pd_read64(computedKtask + TASK_OFF_RO_PTR);
+    if (taskRoPtr) {
+      uint64_t taskRoProc = pd_read64(taskRoPtr);
+      uint64_t taskRoTask = pd_read64(taskRoPtr + 8);
+      printf("\ttask_ro raw: proc=0x%llx task=0x%llx\n",
+             (unsigned long long)taskRoProc,
+             (unsigned long long)taskRoTask);
+      if (taskRoProc != kproc) {
+        printf("\tInvalid task ro region: task_ro_proc != kproc\n\tInvalid task ro region: 0x%llx != 0x%llx\n",
+               (unsigned long long)taskRoProc,
+               (unsigned long long)kproc);
+      }
+      if (taskRoTask != computedKtask) {
+        printf("\tInvalid task ro region: task_ro_task != ktask\n\tInvalid task ro region: 0x%llx != 0x%llx\n",
+               (unsigned long long)taskRoTask,
+               (unsigned long long)computedKtask);
+      }
+    } else {
+      printf("\ttask_ro_ptr is NULL\n");
+    }
+  }
+
+  kcallArgs[0] = kproc;
+  (void)pd_kcall_simple(FUNC_PROC_RELE, kcallArgs, 1, NULL);
   printf("released process structure\n");
 
   pd_deinit();
