@@ -158,8 +158,8 @@ IOReturn PandoraUserClient::kread(PandoraUserClient *client, void *reference,
   if (!buffer) {
     PANDORA_USERCLIENT_LOG_ERROR(
         "PandoraUserClient::kread: Failed to allocate buffer of size %zu @ "
-        "0x%llx\n",
-        len, kaddr);
+        "0x%08x%08x\n",
+        len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu));
     return kIOReturnNoMemory;
   }
 
@@ -168,8 +168,9 @@ IOReturn PandoraUserClient::kread(PandoraUserClient *client, void *reference,
   if (err != KUErrorSuccess) {
     PANDORA_USERCLIENT_LOG_ERROR(
         "PandoraUserClient::kread: Failed to read %zu bytes from kernel "
-        "address 0x%llx. Error code: %d\n",
-        len, kaddr, err);
+        "address 0x%08x%08x: %s (%d). extra data [%llu, %llu, %llu]\n",
+        len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu),
+        get_error_name(err), err, extraerrdata1, extraerrdata2, extraerrdata3);
     IOFree(buffer, len);
     return kIOReturnVMError;
   }
@@ -177,8 +178,8 @@ IOReturn PandoraUserClient::kread(PandoraUserClient *client, void *reference,
   // Log the read data
   PANDORA_LOG_DEFAULT(
       "KextRWUserClient::kread: Read %zu bytes from kernel address "
-      "0x%llx\n",
-      len, kaddr);
+      "0x%08x%08x\n",
+      len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu));
 
   // copy to user space
   int error = copyout(buffer, uaddr, len);
@@ -210,9 +211,9 @@ IOReturn PandoraUserClient::kwrite(PandoraUserClient *client, void *reference,
   void *buffer = IOMalloc(len);
   if (!buffer) {
     PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::kread: Failed to allocate buffer of size %zu @ "
-        "0x%llx\n",
-        len, kaddr);
+        "PandoraUserClient::kwrite: Failed to allocate buffer of size %zu @ "
+        "0x%08x%08x\n",
+        len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu));
     return kIOReturnNoMemory;
   }
 

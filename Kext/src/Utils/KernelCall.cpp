@@ -35,7 +35,8 @@ PandoraKCallResult pandora_kcall(uint64_t fn, const uint64_t *args,
     callArgs[i] = args[i];
   }
 
-  PANDORA_LOG_DEFAULT("KernelCall: invoking 0x%llx with %zu arg(s)", fn,
+  PANDORA_LOG_DEFAULT("KernelCall: invoking 0x%08x%08x with %zu arg(s)",
+                      (uint32_t)(fn >> 32), (uint32_t)(fn & 0xffffffffu),
                       argCount);
 
   uint64_t ret0 = arbitrary_call(

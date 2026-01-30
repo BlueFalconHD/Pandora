@@ -1,6 +1,7 @@
 #include "KernelUtilities.h"
 #include "../Globals.h"
 #include "PandoraLog.h"
+#include "../routines.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -24,7 +25,7 @@ static inline uint64_t getResetVector() {
   return reset_vector;
 }
 
-KUError KernelUtilities::kread(uint64_t address, void *buffer, size_t size) {
+static KUError kread_iomd(uint64_t address, void *buffer, size_t size) {
   if (address == 0 || buffer == nullptr || size == 0) {
     return KUErrorBadArgument;
   }
@@ -32,36 +33,150 @@ KUError KernelUtilities::kread(uint64_t address, void *buffer, size_t size) {
   IOMemoryDescriptor *memDesc = IOMemoryDescriptor::withAddressRange(
       address, size, kIODirectionIn, kernel_task);
   if (!memDesc) {
-    PANDORA_MEMORY_LOG_ERROR("Failed to create IOMemoryDescriptor for read at "
-                             "address 0x%llx, size %zu",
-                             address, size);
     return KUErrorMemoryAllocationFailed;
   }
 
   IOReturn ret = memDesc->prepare();
   if (ret != kIOReturnSuccess) {
-    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for read at "
-                        "address 0x%llx, IOReturn: 0x%x",
-                        address, ret);
+    extraerrdata1 = (uint64_t)(uint32_t)ret;
     memDesc->release();
     return KUErrorMemoryPreperationFailed;
   }
 
   bzero(buffer, size);
   uint64_t bytesRead = memDesc->readBytes(0, buffer, size);
-
-  if (bytesRead != size) {
-    PANDORA_LOG_DEFAULT("Read operation incomplete at address 0x%llx: "
-                        "expected %zu bytes, got %llu bytes",
-                        address, size, bytesRead);
-    memDesc->complete();
-    memDesc->release();
-    return KUErrorNotEnoughBytesRead;
-  }
-
   memDesc->complete();
   memDesc->release();
+
+  return (bytesRead == size) ? KUErrorSuccess : KUErrorNotEnoughBytesRead;
+}
+
+static KUError kread_via_physmap(uint64_t address, void *buffer, size_t size) {
+  if (address == 0 || buffer == nullptr || size == 0) {
+    return KUErrorBadArgument;
+  }
+
+  uint8_t *out = static_cast<uint8_t *>(buffer);
+  uint64_t vaddr = address;
+  size_t remaining = size;
+
+  while (remaining) {
+    vm_offset_t paddr = arm_kvtophys(vaddr);
+    if (paddr == 0) {
+      return KUErrorNotEnoughBytesRead;
+    }
+
+    size_t page_off = static_cast<size_t>(paddr & PAGE_MASK);
+    size_t chunk = PAGE_SIZE - page_off;
+    if (chunk > remaining) {
+      chunk = remaining;
+    }
+
+    IOPhysicalAddress paddr_aligned =
+        static_cast<IOPhysicalAddress>(paddr & ~static_cast<vm_offset_t>(PAGE_MASK));
+    IOByteCount map_len = static_cast<IOByteCount>(page_off + chunk);
+
+    IOMemoryDescriptor *memDesc = IOMemoryDescriptor::withPhysicalAddress(
+        paddr_aligned, map_len, kIODirectionIn);
+    if (!memDesc) {
+      return KUErrorMemoryAllocationFailed;
+    }
+
+    IOReturn ret = memDesc->prepare();
+    if (ret != kIOReturnSuccess) {
+      extraerrdata1 = (uint64_t)(uint32_t)ret;
+      memDesc->release();
+      return KUErrorMemoryPreperationFailed;
+    }
+
+    uint64_t bytesRead = memDesc->readBytes(
+        static_cast<IOByteCount>(page_off), out, static_cast<IOByteCount>(chunk));
+    memDesc->complete();
+    memDesc->release();
+
+    if (bytesRead != chunk) {
+      extraerrdata1 = chunk;
+      extraerrdata2 = bytesRead;
+      return KUErrorNotEnoughBytesRead;
+    }
+
+    out += chunk;
+    vaddr += chunk;
+    remaining -= chunk;
+  }
+
   return KUErrorSuccess;
+}
+
+static KUError kwrite_via_physmap(uint64_t address, const void *buffer,
+                                  size_t size) {
+  if (address == 0 || buffer == nullptr || size == 0) {
+    return KUErrorBadArgument;
+  }
+
+  const uint8_t *in = static_cast<const uint8_t *>(buffer);
+  uint64_t vaddr = address;
+  size_t remaining = size;
+
+  while (remaining) {
+    vm_offset_t paddr = arm_kvtophys(vaddr);
+    if (paddr == 0) {
+      return KUErrorNotEnoughBytesRead;
+    }
+
+    size_t page_off = static_cast<size_t>(paddr & PAGE_MASK);
+    size_t chunk = PAGE_SIZE - page_off;
+    if (chunk > remaining) {
+      chunk = remaining;
+    }
+
+    IOPhysicalAddress paddr_aligned =
+        static_cast<IOPhysicalAddress>(paddr & ~static_cast<vm_offset_t>(PAGE_MASK));
+    IOByteCount map_len = static_cast<IOByteCount>(page_off + chunk);
+
+    IOMemoryDescriptor *memDesc = IOMemoryDescriptor::withPhysicalAddress(
+        paddr_aligned, map_len, kIODirectionInOut);
+    if (!memDesc) {
+      return KUErrorMemoryAllocationFailed;
+    }
+
+    IOReturn ret = memDesc->prepare();
+    if (ret != kIOReturnSuccess) {
+      extraerrdata1 = (uint64_t)(uint32_t)ret;
+      memDesc->release();
+      return KUErrorMemoryPreperationFailed;
+    }
+
+    uint64_t bytesWritten =
+        memDesc->writeBytes(static_cast<IOByteCount>(page_off), in,
+                            static_cast<IOByteCount>(chunk));
+    memDesc->complete();
+    memDesc->release();
+
+    if (bytesWritten != chunk) {
+      extraerrdata1 = chunk;
+      extraerrdata2 = bytesWritten;
+      return KUErrorNotEnoughBytesRead;
+    }
+
+    in += chunk;
+    vaddr += chunk;
+    remaining -= chunk;
+  }
+
+  return KUErrorSuccess;
+}
+
+KUError KernelUtilities::kread(uint64_t address, void *buffer, size_t size) {
+  KUError err = kread_iomd(address, buffer, size);
+  if (err == KUErrorSuccess) {
+    return KUErrorSuccess;
+  }
+
+  // IOMemoryDescriptor reads can fail for certain protected mappings (e.g.
+  // Z_SUBMAP_IDX_READ_ONLY / PMAP_MAPPING_TYPE_ROZONE used by proc_ro).
+  bzero(buffer, size);
+  return kread_via_physmap(address, buffer, size);
 };
 
 KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
@@ -107,9 +222,11 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
     PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
                         "at address 0x%llx, IOReturn: 0x%x",
                         address, ret);
-    extraerrdata1 = ret;
+    extraerrdata1 = (uint64_t)(uint32_t)ret;
     memDesc->release();
-    return KUErrorMemoryPreperationFailed;
+    KUError fallbackErr = kwrite_via_physmap(address, buffer, size);
+    return (fallbackErr == KUErrorSuccess) ? KUErrorSuccess
+                                          : KUErrorMemoryPreperationFailed;
   }
 
   uint64_t bytesWritten = memDesc->writeBytes(0, buffer, size);
@@ -133,7 +250,9 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
     extraerrdata2 = bytesWritten;
     memDesc->complete();
     memDesc->release();
-    return KUErrorNotEnoughBytesRead;
+    KUError fallbackErr = kwrite_via_physmap(address, buffer, size);
+    return (fallbackErr == KUErrorSuccess) ? KUErrorSuccess
+                                          : KUErrorNotEnoughBytesRead;
   }
   memDesc->complete();
   memDesc->release();
@@ -254,7 +373,7 @@ KUError KernelUtilities::locateKernelBase(uint64_t *kernelBaseAddress,
       address = minAddress;
     }
 
-    KUError err = kread(address, buffer, readSize);
+    KUError err = kread_iomd(address, buffer, readSize);
     if (err != KUErrorSuccess) {
       if (address >= chunkSize) {
         address -= chunkSize;
