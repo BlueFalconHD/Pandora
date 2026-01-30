@@ -2,6 +2,7 @@
 #define PROC_RO_H
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdint.h>
 
 struct proc;
@@ -121,6 +122,162 @@ typedef struct __attribute__((aligned(4))) {
     task_control_port_options_t task_control_port_options; // 0x3C
     uint8_t                     _pad_3D[3];                // 0x3D..0x3F
 } task_ro_data_t;
+
+static inline void proc_ro__append_str(char *out, size_t out_len, size_t *pos, const char *s)
+{
+    if (out == NULL || out_len == 0 || pos == NULL || s == NULL) {
+        return;
+    }
+    if (*pos >= out_len) {
+        return;
+    }
+
+    int wrote = snprintf(out + *pos, out_len - *pos, "%s", s);
+    if (wrote <= 0) {
+        return;
+    }
+
+    size_t next = *pos + (size_t)wrote;
+    *pos = (next < out_len) ? next : (out_len - 1);
+}
+
+static inline void proc_ro__append_hex32(char *out, size_t out_len, size_t *pos, uint32_t v)
+{
+    if (out == NULL || out_len == 0 || pos == NULL) {
+        return;
+    }
+    if (*pos >= out_len) {
+        return;
+    }
+
+    int wrote = snprintf(out + *pos, out_len - *pos, "0x%08x", v);
+    if (wrote <= 0) {
+        return;
+    }
+
+    size_t next = *pos + (size_t)wrote;
+    *pos = (next < out_len) ? next : (out_len - 1);
+}
+
+static inline const char *proc_ro_p_csflags_description(uint32_t p_csflags, char *out, size_t out_len)
+{
+    if (out == NULL || out_len == 0) {
+        return "";
+    }
+
+    out[0] = '\0';
+    size_t pos = 0;
+    uint32_t remaining = p_csflags;
+
+#define PROC_RO__ADD_FLAG(mask, name)                                                     \
+    do {                                                                                  \
+        if ((p_csflags & (mask)) != 0) {                                                   \
+            if (pos != 0) {                                                               \
+                proc_ro__append_str(out, out_len, &pos, " | ");                           \
+            }                                                                             \
+            proc_ro__append_str(out, out_len, &pos, (name));                              \
+            remaining &= ~(uint32_t)(mask);                                               \
+        }                                                                                 \
+    } while (0)
+
+    PROC_RO__ADD_FLAG(CS_VALID, "CS_VALID");
+    PROC_RO__ADD_FLAG(CS_ADHOC, "CS_ADHOC");
+    PROC_RO__ADD_FLAG(CS_GET_TASK_ALLOW, "CS_GET_TASK_ALLOW");
+    PROC_RO__ADD_FLAG(CS_INSTALLER, "CS_INSTALLER");
+    PROC_RO__ADD_FLAG(CS_FORCED_LV, "CS_FORCED_LV");
+    PROC_RO__ADD_FLAG(CS_INVALID_ALLOWED, "CS_INVALID_ALLOWED");
+    PROC_RO__ADD_FLAG(CS_HARD, "CS_HARD");
+    PROC_RO__ADD_FLAG(CS_KILL, "CS_KILL");
+    PROC_RO__ADD_FLAG(CS_CHECK_EXPIRATION, "CS_CHECK_EXPIRATION");
+    PROC_RO__ADD_FLAG(CS_RESTRICT, "CS_RESTRICT");
+    PROC_RO__ADD_FLAG(CS_ENFORCEMENT, "CS_ENFORCEMENT");
+    PROC_RO__ADD_FLAG(CS_REQUIRE_LV, "CS_REQUIRE_LV");
+    PROC_RO__ADD_FLAG(CS_ENTITLEMENTS_VALIDATED, "CS_ENTITLEMENTS_VALIDATED");
+    PROC_RO__ADD_FLAG(CS_NVRAM_UNRESTRICTED, "CS_NVRAM_UNRESTRICTED");
+    PROC_RO__ADD_FLAG(CS_RUNTIME, "CS_RUNTIME");
+    PROC_RO__ADD_FLAG(CS_LINKER_SIGNED, "CS_LINKER_SIGNED");
+    PROC_RO__ADD_FLAG(CS_EXEC_SET_HARD, "CS_EXEC_SET_HARD");
+    PROC_RO__ADD_FLAG(CS_EXEC_SET_KILL, "CS_EXEC_SET_KILL");
+    PROC_RO__ADD_FLAG(CS_EXEC_SET_ENFORCEMENT, "CS_EXEC_SET_ENFORCEMENT");
+    PROC_RO__ADD_FLAG(CS_EXEC_INHERIT_SIP, "CS_EXEC_INHERIT_SIP");
+    PROC_RO__ADD_FLAG(CS_KILLED, "CS_KILLED");
+    PROC_RO__ADD_FLAG(CS_NO_UNTRUSTED_HELPERS, "CS_NO_UNTRUSTED_HELPERS");
+    PROC_RO__ADD_FLAG(CS_PLATFORM_BINARY, "CS_PLATFORM_BINARY");
+    PROC_RO__ADD_FLAG(CS_PLATFORM_PATH, "CS_PLATFORM_PATH");
+    PROC_RO__ADD_FLAG(CS_DEBUGGED, "CS_DEBUGGED");
+    PROC_RO__ADD_FLAG(CS_SIGNED, "CS_SIGNED");
+    PROC_RO__ADD_FLAG(CS_DEV_CODE, "CS_DEV_CODE");
+    PROC_RO__ADD_FLAG(CS_DATAVAULT_CONTROLLER, "CS_DATAVAULT_CONTROLLER");
+
+#undef PROC_RO__ADD_FLAG
+
+    if (pos == 0) {
+        if (p_csflags == 0) {
+            proc_ro__append_str(out, out_len, &pos, "0");
+        } else {
+            proc_ro__append_hex32(out, out_len, &pos, p_csflags);
+        }
+        return out;
+    }
+
+    if (remaining != 0) {
+        proc_ro__append_str(out, out_len, &pos, " | ");
+        proc_ro__append_hex32(out, out_len, &pos, remaining);
+    }
+
+    return out;
+}
+
+static inline const char *proc_ro_t_flags_ro_description(uint32_t t_flags_ro, char *out, size_t out_len)
+{
+    if (out == NULL || out_len == 0) {
+        return "";
+    }
+
+    out[0] = '\0';
+    size_t pos = 0;
+    uint32_t remaining = t_flags_ro;
+
+#define PROC_RO__ADD_FLAG(mask, name)                                                     \
+    do {                                                                                  \
+        if ((t_flags_ro & (mask)) != 0) {                                                  \
+            if (pos != 0) {                                                               \
+                proc_ro__append_str(out, out_len, &pos, " | ");                           \
+            }                                                                             \
+            proc_ro__append_str(out, out_len, &pos, (name));                              \
+            remaining &= ~(uint32_t)(mask);                                               \
+        }                                                                                 \
+    } while (0)
+
+    PROC_RO__ADD_FLAG(TFRO_CORPSE, "TFRO_CORPSE");
+    PROC_RO__ADD_FLAG(TFRO_MACH_HARDENING_OPT_OUT, "TFRO_MACH_HARDENING_OPT_OUT");
+    PROC_RO__ADD_FLAG(TFRO_PLATFORM, "TFRO_PLATFORM");
+    PROC_RO__ADD_FLAG(TFRO_FILTER_MSG, "TFRO_FILTER_MSG");
+    PROC_RO__ADD_FLAG(TFRO_PAC_EXC_FATAL, "TFRO_PAC_EXC_FATAL");
+    PROC_RO__ADD_FLAG(TFRO_JIT_EXC_FATAL, "TFRO_JIT_EXC_FATAL");
+    PROC_RO__ADD_FLAG(TFRO_PAC_ENFORCE_USER_STATE, "TFRO_PAC_ENFORCE_USER_STATE");
+    PROC_RO__ADD_FLAG(TFRO_HAS_KD_ACCESS, "TFRO_HAS_KD_ACCESS");
+    PROC_RO__ADD_FLAG(TFRO_FREEZE_EXCEPTION_PORTS, "TFRO_FREEZE_EXCEPTION_PORTS");
+    PROC_RO__ADD_FLAG(TFRO_HAS_SENSOR_MIN_ON_TIME_ACCESS, "TFRO_HAS_SENSOR_MIN_ON_TIME_ACCESS");
+
+#undef PROC_RO__ADD_FLAG
+
+    if (pos == 0) {
+        if (t_flags_ro == 0) {
+            proc_ro__append_str(out, out_len, &pos, "0");
+        } else {
+            proc_ro__append_hex32(out, out_len, &pos, t_flags_ro);
+        }
+        return out;
+    }
+
+    if (remaining != 0) {
+        proc_ro__append_str(out, out_len, &pos, " | ");
+        proc_ro__append_hex32(out, out_len, &pos, remaining);
+    }
+
+    return out;
+}
 
 // 00000000 struct proc_ro_0 // sizeof=0x88
 typedef struct {
