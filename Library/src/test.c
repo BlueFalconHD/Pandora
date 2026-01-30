@@ -13,6 +13,31 @@
 
 #include <mach/error.h>
 
+#include "proc_ro.h"
+
+#define FUNC_PROC_FIND kslide(0xFFFFFE0008DFEE7CULL)
+#define FUNC_PROC_RELE kslide(0xFFFFFE0008DFF518ULL)
+#define FUNC_PROC_TASK kslide(0xFFFFFE0008E02274ULL)
+#define FUNC_RO_FOR_PROC kslide(0xFFFFFE0008E010C0ULL)
+
+#define PROC_STRUCT_SIZE_PTR kslide(0xFFFFFE000C551C30ULL)
+#define PROC_STRUCT_SIZE_DEFAULT 0x7A0ULL
+#define PROC_STRUCT_SIZE_MAX 0x10000ULL
+
+#define PROC_OFF_RO_PTR 0x18ULL
+#define PROC_OFF_FLAGS 0x468ULL
+#define TASK_OFF_RO_PTR 0x3E8ULL
+
+void dump_ro_info(uint64_t addr) {
+    uint8_t buf[sizeof(proc_ro_0_t)];
+    int err = pd_readbuf(addr, buf, sizeof(buf));
+
+    proc_ro_0_t *proc_ro = (proc_ro_0_t *)&buf;
+    printf("proc_ro ro_flags: 0x%x\n", proc_ro->task_data.t_flags_ro);
+    printf("proc_ro cs_flags: 0x%x\n", proc_ro->proc_data.p_csflags);
+
+}
+
 int main(int argc, char *argv[]) {
   if (pd_init() == -1) {
     printf("Failed to initialize Pandora. Is the kernel extension loaded?\n");
@@ -32,19 +57,6 @@ int main(int argc, char *argv[]) {
     targetPid = (pid_t)atoi(argv[1]);
     printf("using pid %d from cmdline\n", targetPid);
   }
-
-#define FUNC_PROC_FIND kslide(0xFFFFFE0008DFEE7CULL)
-#define FUNC_PROC_RELE kslide(0xFFFFFE0008DFF518ULL)
-#define FUNC_PROC_TASK kslide(0xFFFFFE0008E02274ULL)
-#define FUNC_RO_FOR_PROC kslide(0xFFFFFE0008E010C0ULL)
-
-#define PROC_STRUCT_SIZE_PTR kslide(0xFFFFFE000C551C30ULL)
-#define PROC_STRUCT_SIZE_DEFAULT 0x7A0ULL
-#define PROC_STRUCT_SIZE_MAX 0x10000ULL
-
-#define PROC_OFF_RO_PTR 0x18ULL
-#define PROC_OFF_FLAGS 0x468ULL
-#define TASK_OFF_RO_PTR 0x3E8ULL
 
   uint64_t kcallArgs[1] = {0};
 
@@ -103,6 +115,9 @@ int main(int argc, char *argv[]) {
   printf("ro for proc 0x%llx: 0x%llx\n", (unsigned long long)computedKtask,
          (unsigned long long)roForProc);
 
+  bool proc_ro_valid = true;
+  bool task_ro_valid = true;
+
   printf("Validating proc_ro region...\n");
   if (!procRoPtr) {
     printf("\tproc_ro_ptr is NULL\n");
@@ -116,11 +131,13 @@ int main(int argc, char *argv[]) {
       printf("\tInvalid proc ro region: proc_ro_proc != kproc\n\tInvalid proc ro region: 0x%llx != 0x%llx\n",
              (unsigned long long)procRoProc,
              (unsigned long long)kproc);
+      proc_ro_valid = false;
     }
     if (procRoTask != computedKtask) {
       printf("\tInvalid proc ro region: proc_ro_task != ktask\n\tInvalid proc ro region: 0x%llx != 0x%llx\n",
              (unsigned long long)procRoTask,
              (unsigned long long)computedKtask);
+      proc_ro_valid = false;
     }
   }
 
@@ -137,15 +154,23 @@ int main(int argc, char *argv[]) {
         printf("\tInvalid task ro region: task_ro_proc != kproc\n\tInvalid task ro region: 0x%llx != 0x%llx\n",
                (unsigned long long)taskRoProc,
                (unsigned long long)kproc);
+        proc_ro_valid = false;
       }
       if (taskRoTask != computedKtask) {
         printf("\tInvalid task ro region: task_ro_task != ktask\n\tInvalid task ro region: 0x%llx != 0x%llx\n",
                (unsigned long long)taskRoTask,
                (unsigned long long)computedKtask);
+        proc_ro_valid = false;
       }
     } else {
       printf("\ttask_ro_ptr is NULL\n");
     }
+  }
+
+  if (proc_ro_valid || task_ro_valid) {
+      dump_ro_info(procRoPtr); // prefer proc ro ptr for convenience
+  } else {
+      printf("Neither proc_ro nor task_ro regions are valid!\n");
   }
 
   kcallArgs[0] = kproc;

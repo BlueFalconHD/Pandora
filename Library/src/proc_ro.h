@@ -10,11 +10,11 @@ struct ucred;
 
 typedef struct {
     uint32_t val[2];
-} security_token_t;
+} my_security_token_t;
 
 typedef struct {
     uint32_t val[8];
-} audit_token_t;
+} my_audit_token_t;
 
 typedef int32_t  pid_t;
 
@@ -33,8 +33,8 @@ typedef struct {
 
 // 00000000 struct task_token_ro_data // sizeof=0x28
 typedef struct {
-    security_token_t sec_token; // 0x00 (8)
-    audit_token_t    audit_token; // 0x08 (32)
+    my_security_token_t sec_token; // 0x00 (8)
+    my_audit_token_t    audit_token; // 0x08 (32)
 } task_token_ro_data_t;
 
 // 00000000 struct proc_platform_ro_data // sizeof=0xC
@@ -50,7 +50,50 @@ typedef struct __attribute__((aligned(8))) {
     int32_t             p_idversion;        // 0x08
     pid_t               p_orig_ppid;        // 0x0C
     int32_t             p_orig_ppidversion; // 0x10
+
+
     uint32_t            p_csflags;          // 0x14
+
+    #define CS_VALID                    0x00000001  /* dynamically valid */
+    #define CS_ADHOC                    0x00000002  /* ad hoc signed */
+    #define CS_GET_TASK_ALLOW           0x00000004  /* has get-task-allow entitlement */
+    #define CS_INSTALLER                0x00000008  /* has installer entitlement */
+
+    #define CS_FORCED_LV                0x00000010  /* Library Validation required by Hardened System Policy */
+    #define CS_INVALID_ALLOWED          0x00000020  /* (macOS Only) Page invalidation allowed by task port policy */
+
+    #define CS_HARD                     0x00000100  /* don't load invalid pages */
+    #define CS_KILL                     0x00000200  /* kill process if it becomes invalid */
+    #define CS_CHECK_EXPIRATION         0x00000400  /* force expiration checking */
+    #define CS_RESTRICT                 0x00000800  /* tell dyld to treat restricted */
+
+    #define CS_ENFORCEMENT              0x00001000  /* require enforcement */
+    #define CS_REQUIRE_LV               0x00002000  /* require library validation */
+    #define CS_ENTITLEMENTS_VALIDATED   0x00004000  /* code signature permits restricted entitlements */
+    #define CS_NVRAM_UNRESTRICTED       0x00008000  /* has com.apple.rootless.restricted-nvram-variables.heritable entitlement */
+
+    #define CS_RUNTIME                  0x00010000  /* Apply hardened runtime policies */
+    #define CS_LINKER_SIGNED            0x00020000  /* Automatically signed by the linker */
+
+    #define CS_ALLOWED_MACHO            (CS_ADHOC | CS_HARD | CS_KILL | CS_CHECK_EXPIRATION | \
+	                             CS_RESTRICT | CS_ENFORCEMENT | CS_REQUIRE_LV | CS_RUNTIME | CS_LINKER_SIGNED)
+
+    #define CS_EXEC_SET_HARD            0x00100000  /* set CS_HARD on any exec'ed process */
+    #define CS_EXEC_SET_KILL            0x00200000  /* set CS_KILL on any exec'ed process */
+    #define CS_EXEC_SET_ENFORCEMENT     0x00400000  /* set CS_ENFORCEMENT on any exec'ed process */
+    #define CS_EXEC_INHERIT_SIP         0x00800000  /* set CS_INSTALLER on any exec'ed process */
+
+    #define CS_KILLED                   0x01000000  /* was killed by kernel for invalidity */
+    #define CS_NO_UNTRUSTED_HELPERS     0x02000000  /* kernel did not load a non-platform-binary dyld or Rosetta runtime */
+    #define CS_DYLD_PLATFORM            CS_NO_UNTRUSTED_HELPERS /* old name */
+    #define CS_PLATFORM_BINARY          0x04000000  /* this is a platform binary */
+    #define CS_PLATFORM_PATH            0x08000000  /* platform binary by the fact of path (osx only) */
+
+    #define CS_DEBUGGED                 0x10000000  /* process is currently or has previously been debugged and allowed to run with invalid pages */
+    #define CS_SIGNED                   0x20000000  /* process has a signature (may have gone invalid) */
+    #define CS_DEV_CODE                 0x40000000  /* code is dev signed, cannot be loaded into prod signed code (will go away with rdar://problem/28322552) */
+    #define CS_DATAVAULT_CONTROLLER     0x80000000  /* has Data Vault controller entitlement */
+
     ucred_smr_ptr_t     p_ucred;            // 0x18 (8 bytes)
     uint8_t            *syscall_filter_mask;// 0x20
     proc_platform_ro_data_t p_platform_data;// 0x28 (0x0C)
@@ -61,7 +104,20 @@ typedef struct __attribute__((aligned(8))) {
 typedef struct __attribute__((aligned(4))) {
     task_token_ro_data_t        task_tokens;               // 0x00 (0x28)
     task_filter_ro_data_t       task_filters;              // 0x28 (0x10)
+
     uint32_t                    t_flags_ro;                // 0x38
+
+    #define TFRO_CORPSE                     0x00000020                      /* task is a corpse */
+    #define TFRO_MACH_HARDENING_OPT_OUT     0x00000040                      /* task might load third party plugins on macOS and should be opted out of mach hardening */
+    #define TFRO_PLATFORM                   0x00000080                      /* task is a platform binary */
+    #define TFRO_FILTER_MSG                 0x00004000                      /* task calls into message filter callback before sending a message */
+    #define TFRO_PAC_EXC_FATAL              0x00010000                      /* task is marked a corpse if a PAC exception occurs */
+    #define TFRO_JIT_EXC_FATAL              0x00020000                      /* kill the task on access violations from privileged JIT code */
+    #define TFRO_PAC_ENFORCE_USER_STATE     0x01000000                      /* Enforce user and kernel signed thread state */
+    #define TFRO_HAS_KD_ACCESS              0x02000000                      /* Access to the kernel exclave resource domain  */
+    #define TFRO_FREEZE_EXCEPTION_PORTS     0x04000000                      /* Setting new exception ports on the task/thread is disallowed */
+    #define TFRO_HAS_SENSOR_MIN_ON_TIME_ACCESS     0x08000000               /* Access to sensor minimum on time call  */
+
     task_control_port_options_t task_control_port_options; // 0x3C
     uint8_t                     _pad_3D[3];                // 0x3D..0x3F
 } task_ro_data_t;
