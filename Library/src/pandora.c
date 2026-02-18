@@ -107,7 +107,6 @@ int pd_init(void) {
 
 void pd_deinit(void) {
   if (MACH_PORT_VALID(gClient)) {
-    printf("Deinitializing Pandora connection\n");
     pandora_close(gClient);
     gClient = MACH_PORT_NULL;
   }

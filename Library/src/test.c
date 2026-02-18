@@ -1,3 +1,4 @@
+#include "hexdump.h"
 #include "pandora.h"
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOReturn.h>
@@ -14,6 +15,10 @@
 #include <mach/error.h>
 
 #include "proc_ro.h"
+
+// #include "taskh.h"
+#include "memdiff.h"
+#include "proch.h"
 
 #define FUNC_PROC_FIND kslide(0xFFFFFE0008DFEE7CULL)
 #define FUNC_PROC_RELE kslide(0xFFFFFE0008DFF518ULL)
@@ -192,8 +197,61 @@ int main(int argc, char *argv[]) {
   (void)pd_kcall_simple(FUNC_PROC_RELE, kcall_args, 1, NULL);
   printf("released process structure\n");
 
+  uint64_t cproc = kproc;
+  memdiff_view *kprocview;
+  memdiff_view *kprocroview;
+
+  char buf[512];
+
+  int total_procs = 0;
+  int procs_w_hardened = 0;
+
+  while (cproc != 0) {
+    memdiff_view *kprocview = memdiff_create(cproc, sizeof(struct ks_proc));
+    if (!kprocview) {
+            printf("failed to create memdiff view for kproc\n");
+            total_procs++;
+            goto end;
+    }
+
+    ks_proc_t kproc_v = (ks_proc_t)kprocview->original_copy;
+
+    // make a view of the ro region
+    kprocroview = memdiff_create((uintptr_t)kproc_v->p_proc_ro, sizeof(struct ks_proc_ro));
+    if (!kprocroview) {
+            printf("failed to create memdiff view for kproc ro\n");
+            free(kprocview);
+            total_procs++;
+            goto end;
+    }
+
+    ks_proc_ro_t kproc_ro_v = (ks_proc_ro_t)kprocroview->original_copy;
+
+    if ((kproc_ro_v->proc_data.p_csflags & CS_RUNTIME)) {
+        free(kprocroview);
+        free(kprocview);
+        cproc = (uint64_t)kproc_v->p_list.le_prev;
+        total_procs++;
+        continue;
+    }
+
+    memset(buf, 0, sizeof(buf));
+    proc_ro_p_csflags_description(kproc_ro_v->proc_data.p_csflags, buf, sizeof(buf));
+
+    printf("%s... (%i)\n\t%s\n", kproc_v->p_forkcopy.p_comm, (int)kproc_v->p_pid, buf);
+    cproc = (uint64_t)kproc_v->p_list.le_prev;
+
+    procs_w_hardened++;
+    total_procs++;
+
+    free(kprocroview);
+    free(kprocview);
+  }
+
+  printf("%i/%i procs hardened", procs_w_hardened, total_procs);
+
+end:
   pd_deinit();
 
-  printf("deiniting pandora\n");
   return 0;
 }
