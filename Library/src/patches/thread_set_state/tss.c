@@ -14,8 +14,8 @@
 
 #include <mach/error.h>
 
-#include "../esym/b.h"
-#include "../esym/nop.h"
+#include "../../esym/b.h"
+#include "../../esym/nop.h"
 
 static bool patch_tbnz_to_nop(csh handle, uint64_t pc) {
   printf("🔍 Patching TBNZ to NOP at 0x%llx\n", pc);

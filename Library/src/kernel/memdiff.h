@@ -20,6 +20,5 @@ void memdiff_destroy(memdiff_view *view);
 
 
 #define MEMDIFF_CREATE(ptr, type) memdiff_create((uintptr_t)(ptr), sizeof(type))
-#define MEMDIFF_ORIG(view, type, name) (type *)name = (type *)view->original_copy
 
 #endif /* MEMDIFF_H */
