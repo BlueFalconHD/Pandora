@@ -216,7 +216,12 @@ kern_return_t pd_pwritebuf(pid_t pid, uint64_t addr, const void *buf,
 }
 
 uint64_t pd_get_kernel_base() {
-  uint64_t kbase = 0;
+  static uint64_t kbase = 0;
+
+  if (kbase) {
+    return pd_kbase;
+  }
+
   kern_return_t ret = pandora_get_kbase(gClient, &kbase);
   if (ret != KERN_SUCCESS) {
     return 0;

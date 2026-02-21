@@ -1,2 +1,13 @@
 Flags to clear: CS_HARD | CS_KILL | CS_CHECK_EXPIRATION | CS_RESTRICT | CS_ENFORCEMENT | CS_REQUIRE_LV
 Flags to add: CS_VALID | CS_ADHOC | CS_GET_TASK_ALLOW | CS_INSTALLER
+
+
+1.
+	vm_map_lock(map);
+	vmlp_range_event_none(map);
+	map->cs_enforcement = false;
+	pmap_set_vm_map_cs_enforced(map->pmap, val);
+	vm_map_unlock(map);
+
+2.
+    set csflags

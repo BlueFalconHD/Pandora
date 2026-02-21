@@ -101,3 +101,11 @@ int memdiff_commit(memdiff_view *view) {
          commit_count, (unsigned long long)view->base_address);
   return 0;
 }
+
+void memdiff_destroy(memdiff_view *view) {
+  if (view) {
+    free(view->original_copy);
+    free(view->modified_copy);
+    free(view);
+  }
+}
