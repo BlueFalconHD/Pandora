@@ -27,6 +27,7 @@
 
 #include "calypso/string_search.h"
 #include "calypso/page_size.h"
+#include "calypso/xref.h"
 
 #define FUNC_PROC_FIND kslide(0xFFFFFE0008DFEE7CULL)
 #define FUNC_PROC_RELE kslide(0xFFFFFE0008DFF518ULL)
@@ -56,50 +57,6 @@ int main(int argc, char *argv[]) {
   kernel_macho_init(pd_kbase);
   kernel_proc_task_init();
 
-  printf("%s\n", kernel_proc->p_forkcopy.p_comm);
-
-  memdiff_view *proc_view = kernel_proc_view;
-  ks_proc_t proc_v = (ks_proc_t)proc_view->original_copy;
-  uintptr_t proc_addr = proc_view->base_address;
-
-  for (;;) {
-    uintptr_t prev_link = (uintptr_t)proc_v->p_list.le_prev;
-    if (prev_link == 0) {
-      break;
-    }
-
-    uintptr_t prev_addr = prev_link - offsetof(struct ks_proc, p_list.le_next);
-    if (prev_addr == 0 || prev_addr == proc_addr) {
-      break;
-    }
-
-    memdiff_view *prev_view = memdiff_create(prev_addr, sizeof(struct ks_proc));
-    if (!prev_view) {
-      printf("Failed to create memdiff view for proc at 0x%llx\n",
-             (unsigned long long)prev_addr);
-      break;
-    }
-
-    ks_proc_t prev_v = (ks_proc_t)prev_view->original_copy;
-    if ((uintptr_t)prev_v->p_list.le_next != proc_addr) {
-      memdiff_destroy(prev_view);
-      break;
-    }
-
-    // printf("prev: %s (%i)\n", prev_v->p_forkcopy.p_comm, prev_v->p_pid);
-
-    if (proc_view != kernel_proc_view) {
-      memdiff_destroy(proc_view);
-    }
-    proc_view = prev_view;
-    proc_v = prev_v;
-    proc_addr = prev_addr;
-  }
-
-  if (proc_view != kernel_proc_view) {
-    memdiff_destroy(proc_view);
-  }
-
   kernel_macho_print_segments();
 
   struct section_64 *sect = NULL;
@@ -123,8 +80,45 @@ int main(int argc, char *argv[]) {
   }
   printf("Found thread-set-state string at 0x%llx\n", (unsigned long long)tss_str + cstring_view->base_address);
 
-  get_page_size();
-  printf("pagesize: %llx\n", page_size);
+  hexdump((const uint8_t *)(tss_str - 0x100), 0x200 + 34, default_hexdump_opts);
+
+  // make a memdiff view of the text segment of kernel
+  struct section_64 *text_sect = NULL;
+  findres = kernel_macho_find_section_by_name("__TEXT_EXEC", "__text", &text_sect);
+  if (findres != 0 || !text_sect) {
+    printf("Failed to find __TEXT_EXEC.__text section\n");
+    memdiff_destroy(cstring_view);
+    goto end;
+  }
+
+  memdiff_view *text_view = memdiff_create(text_sect->addr, text_sect->size);
+  if (!text_view) {
+    printf("Failed to create memdiff view for __TEXT_EXEC.__text section\n");
+    memdiff_destroy(cstring_view);
+    goto end;
+  }
+
+
+  uint64_t *results = calloc(16, sizeof(uint64_t));
+  int found = xref_find_adrp(text_view, tss_str + cstring_view->base_address, results, 16);
+
+
+  printf("Found %u adrp instructions referencing thread-set-state string:\n", found);
+  for (int i = 0; i < found; i++) {
+    printf("  0x%llx\n", results[i]);
+  }
+
+  memset(results, 0, 16 * sizeof(uint64_t));
+  found = xref_find_adrp(text_view, kunslide(tss_str + cstring_view->base_address), results, 16);
+
+  printf("Found %u adrp instructions referencing unkslid thread-set-state:\n", found);
+  for (int i = 0; i < found; i++) {
+    printf("  0x%llx\n", results[i]);
+  }
+
+  printf("\noffsets from IDA (kslid with 0x%llx):\n", pd_kslide);
+  printf("actual xref to target: 0x%llx\n", kslide(0xFFFFFE00088DCDFC));
+  printf("actual target address: 0x%llx\n", kslide(0xFFFFFE000705047A));
 
 
 end:
