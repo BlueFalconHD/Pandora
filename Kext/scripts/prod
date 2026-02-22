@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 # Stub script to make it easier to run the base build command
-sudo ./build.sh
+./build.sh

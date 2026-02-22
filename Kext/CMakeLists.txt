@@ -4,6 +4,18 @@ project(Pandora LANGUAGES C CXX ASM)
 # Enable compile_commands.json generation
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# The macOS kernel headers (Kernel.framework) rely on AppleClang-specific
+# builtins (e.g. __builtin_ptrauth_string_discriminator). Building with a
+# non-Apple Clang toolchain (such as Homebrew LLVM) typically fails with errors
+# like "statement expression not allowed at file scope" coming from ptrauth.h.
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    message(FATAL_ERROR
+        "Pandora kext must be built with AppleClang. "
+        "Reconfigure with -DCMAKE_C_COMPILER=\"$(xcrun --find clang)\" "
+        "-DCMAKE_CXX_COMPILER=\"$(xcrun --find clang++)\". "
+        "Current: ${CMAKE_CXX_COMPILER} (${CMAKE_CXX_COMPILER_ID}).")
+endif()
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

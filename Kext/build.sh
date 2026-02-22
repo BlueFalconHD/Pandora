@@ -6,6 +6,13 @@ PROJECT_NAME="Pandora"
 BUILD_DIR="build"
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Building as root will leave root-owned artifacts in the build directory. The
+# install step already uses sudo internally where required.
+if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    echo "[ERROR] Do not run this script with sudo. Build as your user; only the install step elevates." >&2
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -56,7 +63,46 @@ setup_cmake() {
     fi
 
     cd "$BUILD_DIR"
-    cmake .. -DCMAKE_BUILD_TYPE=Debug
+
+    # The kernel headers in the macOS SDK rely on AppleClang builtins (e.g.
+    # __builtin_ptrauth_string_discriminator). Using non-Apple clang (such as
+    # Homebrew LLVM) can fail with errors like:
+    #   "statement expression not allowed at file scope"
+    local C_COMPILER CXX_COMPILER
+    C_COMPILER="$(xcrun --find clang)"
+    CXX_COMPILER="$(xcrun --find clang++)"
+    local SDK_PATH
+    SDK_PATH="$(xcrun --show-sdk-path)"
+
+    if [ -z "$C_COMPILER" ] || [ -z "$CXX_COMPILER" ] || [ -z "$SDK_PATH" ]; then
+        log_error "Failed to locate Xcode toolchain compilers via xcrun."
+        log_error "Ensure Xcode (or Command Line Tools) are installed and selected (xcode-select)."
+        exit 1
+    fi
+    if [ ! -d "$SDK_PATH" ]; then
+        log_error "macOS SDK path reported by xcrun does not exist: $SDK_PATH"
+        exit 1
+    fi
+
+    # If the build dir was previously configured with a different compiler,
+    # re-configure to avoid sticky CMake cache issues.
+    if [ -f "CMakeCache.txt" ]; then
+        local CACHED_CXX
+        CACHED_CXX="$(grep -E '^CMAKE_CXX_COMPILER:FILEPATH=' CMakeCache.txt | cut -d= -f2- || true)"
+        if [ -n "$CACHED_CXX" ] && [ "$CACHED_CXX" != "$CXX_COMPILER" ]; then
+            log_warning "Build dir is configured for a different compiler:"
+            log_warning "  cached: $CACHED_CXX"
+            log_warning "  desired: $CXX_COMPILER"
+            log_warning "Removing CMake cache to reconfigure with AppleClang..."
+            rm -rf CMakeCache.txt CMakeFiles
+        fi
+    fi
+
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_C_COMPILER="$C_COMPILER" \
+        -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
+        -DCMAKE_OSX_SYSROOT="$SDK_PATH"
 
     # Copy compile_commands.json to root for LSP
     if [ -f "compile_commands.json" ]; then

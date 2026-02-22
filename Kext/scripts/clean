@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # Stub script to make it easier to run the clean command
 
-sudo ./build.sh clean
+./build.sh clean

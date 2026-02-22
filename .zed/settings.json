@@ -1,0 +1,9 @@
+{
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "path": "/Library/Developer/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clangd"
+      }
+    }
+  }
+}
