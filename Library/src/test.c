@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <mach/mach_time.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,8 +58,6 @@ int main(int argc, char *argv[]) {
   kernel_macho_init(pd_kbase);
   kernel_proc_task_init();
 
-  kernel_macho_print_segments();
-
   struct section_64 *sect = NULL;
   int findres = kernel_macho_find_section_by_name("__TEXT", "__cstring", &sect);
   if (findres != 0 || !sect) {
@@ -72,15 +71,32 @@ int main(int argc, char *argv[]) {
     goto end;
   }
 
-  uint64_t tss_str = search_pattern((const uint8_t *)"com.apple.private.thread-set-state", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", cstring_view->original_copy, cstring_view->size, 1);
-  if (!tss_str) {
+  uint8_t *tss_ptr = (uint8_t *)(uintptr_t)search_pattern(
+      (const uint8_t *)"com.apple.private.thread-set-state",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      cstring_view->original_copy,
+      cstring_view->size,
+      1);
+  if (!tss_ptr) {
     printf("Failed to find thread-set-state string in __TEXT.__cstring\n");
     memdiff_destroy(cstring_view);
     goto end;
   }
-  printf("Found thread-set-state string at 0x%llx\n", (unsigned long long)tss_str + cstring_view->base_address);
 
-  hexdump((const uint8_t *)(tss_str - 0x100), 0x200 + 34, default_hexdump_opts);
+  const uint8_t *cstring_base = (const uint8_t *)cstring_view->original_copy;
+  const uint8_t *cstring_end = cstring_base + cstring_view->size;
+  if (tss_ptr < cstring_base || tss_ptr >= cstring_end) {
+    printf("Found thread-set-state pointer is out of view range: tss_ptr=0x%llx view=[0x%llx..0x%llx)\n",
+           (unsigned long long)(uintptr_t)tss_ptr,
+           (unsigned long long)(uintptr_t)cstring_base,
+           (unsigned long long)(uintptr_t)cstring_end);
+    memdiff_destroy(cstring_view);
+    goto end;
+  }
+
+  size_t tss_off = (size_t)(tss_ptr - cstring_base);
+  uint64_t tss_kva = cstring_view->base_address + (uint64_t)tss_off;
+  printf("Found thread-set-state string at 0x%llx\n", (unsigned long long)tss_kva);
 
   // make a memdiff view of the text segment of kernel
   struct section_64 *text_sect = NULL;
@@ -100,19 +116,10 @@ int main(int argc, char *argv[]) {
 
 
   uint64_t *results = calloc(16, sizeof(uint64_t));
-  int found = xref_find_adrp(text_view, tss_str + cstring_view->base_address, results, 16);
+  int found = xref_find_adrp_add(text_view, tss_kva, results, 16);
 
-
-  printf("Found %u adrp instructions referencing thread-set-state string:\n", found);
-  for (int i = 0; i < found; i++) {
-    printf("  0x%llx\n", results[i]);
-  }
-
-  memset(results, 0, 16 * sizeof(uint64_t));
-  found = xref_find_adrp(text_view, kunslide(tss_str + cstring_view->base_address), results, 16);
-
-  printf("Found %u adrp instructions referencing unkslid thread-set-state:\n", found);
-  for (int i = 0; i < found; i++) {
+  printf("Found %u adrp+add instruction pairs referencing thread-set-state string:\n", found);
+  for (int i = 0; i < (found <= 1024 ? found : 1024); i++) {
     printf("  0x%llx\n", results[i]);
   }
 
