@@ -1,5 +1,5 @@
 #ifndef CALYPSO_PAGE_SIZE_H
-#define CALPYSO_PAGE_SIZE_H
+#define CALYPSO_PAGE_SIZE_H
 
 #include <stdint.h>
 #include <sys/types.h>
