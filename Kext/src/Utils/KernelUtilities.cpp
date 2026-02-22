@@ -38,7 +38,7 @@ static KUError kread_iomd(uint64_t address, void *buffer, size_t size) {
 
   IOReturn ret = memDesc->prepare();
   if (ret != kIOReturnSuccess) {
-    extraerrdata1 = (uint64_t)(uint32_t)ret;
+    pandora_runtime_state().debug.extraErrorData1 = (uint64_t)(uint32_t)ret;
     memDesc->release();
     return KUErrorMemoryPreperationFailed;
   }
@@ -84,7 +84,7 @@ static KUError kread_via_physmap(uint64_t address, void *buffer, size_t size) {
 
     IOReturn ret = memDesc->prepare();
     if (ret != kIOReturnSuccess) {
-      extraerrdata1 = (uint64_t)(uint32_t)ret;
+      pandora_runtime_state().debug.extraErrorData1 = (uint64_t)(uint32_t)ret;
       memDesc->release();
       return KUErrorMemoryPreperationFailed;
     }
@@ -95,8 +95,8 @@ static KUError kread_via_physmap(uint64_t address, void *buffer, size_t size) {
     memDesc->release();
 
     if (bytesRead != chunk) {
-      extraerrdata1 = chunk;
-      extraerrdata2 = bytesRead;
+      pandora_runtime_state().debug.extraErrorData1 = chunk;
+      pandora_runtime_state().debug.extraErrorData2 = bytesRead;
       return KUErrorNotEnoughBytesRead;
     }
 
@@ -142,7 +142,7 @@ static KUError kwrite_via_physmap(uint64_t address, const void *buffer,
 
     IOReturn ret = memDesc->prepare();
     if (ret != kIOReturnSuccess) {
-      extraerrdata1 = (uint64_t)(uint32_t)ret;
+      pandora_runtime_state().debug.extraErrorData1 = (uint64_t)(uint32_t)ret;
       memDesc->release();
       return KUErrorMemoryPreperationFailed;
     }
@@ -154,8 +154,8 @@ static KUError kwrite_via_physmap(uint64_t address, const void *buffer,
     memDesc->release();
 
     if (bytesWritten != chunk) {
-      extraerrdata1 = chunk;
-      extraerrdata2 = bytesWritten;
+      pandora_runtime_state().debug.extraErrorData1 = chunk;
+      pandora_runtime_state().debug.extraErrorData2 = bytesWritten;
       return KUErrorNotEnoughBytesRead;
     }
 
@@ -191,18 +191,6 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
     PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
                         "address 0x%llx, size %zu",
                         address, size);
-    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
-                        "address 0x%llx, size %zu",
-                        address, size);
-    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
-                        "address 0x%llx, size %zu",
-                        address, size);
-    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
-                        "address 0x%llx, size %zu",
-                        address, size);
-    PANDORA_LOG_DEFAULT("Failed to create IOMemoryDescriptor for write at "
-                        "address 0x%llx, size %zu",
-                        address, size);
     return KUErrorMemoryAllocationFailed;
   }
   IOReturn ret = memDesc->prepare();
@@ -210,19 +198,7 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
     PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
                         "at address 0x%llx, IOReturn: 0x%x",
                         address, ret);
-    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
-                        "at address 0x%llx, IOReturn: 0x%x",
-                        address, ret);
-    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
-                        "at address 0x%llx, IOReturn: 0x%x",
-                        address, ret);
-    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
-                        "at address 0x%llx, IOReturn: 0x%x",
-                        address, ret);
-    PANDORA_LOG_DEFAULT("Failed to prepare IOMemoryDescriptor for write "
-                        "at address 0x%llx, IOReturn: 0x%x",
-                        address, ret);
-    extraerrdata1 = (uint64_t)(uint32_t)ret;
+    pandora_runtime_state().debug.extraErrorData1 = (uint64_t)(uint32_t)ret;
     memDesc->release();
     KUError fallbackErr = kwrite_via_physmap(address, buffer, size);
     return (fallbackErr == KUErrorSuccess) ? KUErrorSuccess
@@ -234,20 +210,8 @@ KUError KernelUtilities::kwrite(uint64_t address, const void *buffer,
     PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
                         "expected %zu bytes, wrote %llu bytes",
                         address, size, bytesWritten);
-    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
-                        "expected %zu bytes, wrote %llu bytes",
-                        address, size, bytesWritten);
-    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
-                        "expected %zu bytes, wrote %llu bytes",
-                        address, size, bytesWritten);
-    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
-                        "expected %zu bytes, wrote %llu bytes",
-                        address, size, bytesWritten);
-    PANDORA_LOG_DEFAULT("Write operation incomplete at address 0x%llx: "
-                        "expected %zu bytes, wrote %llu bytes",
-                        address, size, bytesWritten);
-    extraerrdata1 = size;
-    extraerrdata2 = bytesWritten;
+    pandora_runtime_state().debug.extraErrorData1 = size;
+    pandora_runtime_state().debug.extraErrorData2 = bytesWritten;
     memDesc->complete();
     memDesc->release();
     KUError fallbackErr = kwrite_via_physmap(address, buffer, size);
@@ -329,8 +293,8 @@ KUError KernelUtilities::pwrite(task_t task, uint64_t address,
     PANDORA_LOG_DEFAULT(
         "Proc write incomplete at address 0x%llx: expected %zu bytes, wrote %llu bytes",
         address, size, bytesWritten);
-    extraerrdata1 = size;
-    extraerrdata2 = bytesWritten;
+    pandora_runtime_state().debug.extraErrorData1 = size;
+    pandora_runtime_state().debug.extraErrorData2 = bytesWritten;
     memDesc->complete();
     memDesc->release();
     return KUErrorNotEnoughBytesRead;

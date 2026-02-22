@@ -17,14 +17,15 @@ bool Pandora::start(IOService *provider) {
 
   pandora_log_ensure_initialized();
 
-  io_service_start_called = true;
-  io_service_start_time = makeCurrentTimestampPair();
+  PandoraRuntimeState &runtime = pandora_runtime_state();
+  runtime.telemetry.ioServiceStartCalled = true;
+  runtime.telemetry.ioServiceStartTime = makeCurrentTimestampPair();
 
   // Track whether launchd (pid 1) exists at the time IOService starts.
-  pid1_exists = false;
+  runtime.telemetry.pid1Exists = false;
   proc_t p1 = proc_find(1);
   if (p1) {
-    pid1_exists = true;
+    runtime.telemetry.pid1Exists = true;
     proc_rele(p1);
   }
 

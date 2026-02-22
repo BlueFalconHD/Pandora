@@ -1,23 +1,8 @@
 #include "PandoraUserClient.h"
+
 #include "Globals.h"
-#include "Modules/HwAccessModule.h"
-#include "Utils/KernelCall.h"
-#include "Utils/KernelUtilities.h"
+#include "Modules/ModuleSystem.h"
 #include "Utils/PandoraLog.h"
-#include "Utils/TimeUtilities.h"
-#include "kpi.h"
-#include <IOKit/IOLib.h>
-#include <IOKit/IOMemoryDescriptor.h>
-#include <IOKit/IOReturn.h>
-#include <IOKit/IOService.h>
-#include <IOKit/IOSharedDataQueue.h>
-#include <IOKit/IOUserClient.h>
-#include <kern/task.h>
-#include <libkern/OSDebug.h>
-#include <libkern/copyio.h>
-#include <mach-o/loader.h>
-#include <mach/vm_param.h>
-#include <string.h>
 
 #define super IOUserClient
 OSDefineMetaClassAndFinalStructors(PandoraUserClient, IOUserClient);
@@ -30,400 +15,48 @@ bool PandoraUserClient::initWithTask(task_t owningTask, void *securityID,
 
   pandora_log_ensure_initialized();
 
-  if (!pandora_hw_access_active()) {
-    PANDORA_LOG_DEFAULT("PandoraUserClient::initWithTask: hw_access module is disabled");
-    return false;
-  }
-
-  PANDORA_LOG_DEFAULT("PandoraUserClient::initWithTask: Initializing Pandora "
-                      "User Client with task %p, security ID %p, type %u",
-                      owningTask, securityID, type);
-
-  PANDORA_LOG_DEFAULT(
-      "PandoraUserClient::initWithTask: current saw 0 state: %d", workloopsaw0);
-
   bool allow = false;
   OSObject *entitlement =
       copyClientEntitlement(owningTask, "com.bluefalconhd.pandora.krw");
   if (entitlement) {
     allow = (entitlement == kOSBooleanTrue);
     entitlement->release();
-  };
-
-  KUError kuError = ku.init();
-  if (kuError != KUErrorSuccess) {
-    PANDORA_LOG_ERROR("PandoraUserClient::initWithTask: Failed to initialize "
-                      "KernelUtilities, "
-                      "error code: %s (%d)",
-                      get_error_name(kuError), kuError);
-
+  }
+  if (!allow) {
+    PANDORA_LOG_DEFAULT(
+        "PandoraUserClient::initWithTask: missing entitlement");
     return false;
   }
 
-  uint64_t kernelBase = ku.kernelBase();
-  uint64_t kernelSlide = ku.kernelSlideValue();
-
-  if (kernelBase == 0 || kernelSlide == 0) {
-    PANDORA_LOG_ERROR("PandoraUserClient::initWithTask: Either kernel base "
-                      "or slide is zero, "
-                      "initialization failed");
+  if (!pandora_modules_authorize_user_client(owningTask, securityID, type)) {
+    PANDORA_LOG_DEFAULT("PandoraUserClient::initWithTask: denied by modules");
     return false;
   }
 
-  PANDORA_LOG_DEFAULT("Kernel base address: 0x%08x%08x, slide: 0x%llx",
-                      (uint32_t)(kernelBase >> 32),
-                      (uint32_t)(kernelBase & 0xFFFFFFFFu), kernelSlide);
+  const PandoraRuntimeState &runtime = pandora_runtime_state();
+  PANDORA_LOG_DEFAULT("PandoraUserClient::initWithTask: workloop saw zero=%d",
+                      runtime.telemetry.workloopSawZero ? 1 : 0);
 
-  user_client_initialized = true;
-  user_client_init_time = makeCurrentTimestampPair();
-
-  return allow;
+  return true;
 }
 
 IOReturn PandoraUserClient::externalMethod(uint32_t selector,
                                            IOExternalMethodArguments *args,
                                            IOExternalMethodDispatch *dispatch,
-                                           OSObject *target, void *reference) {
-  if (!pandora_hw_access_active()) {
-    return kIOReturnNotPermitted;
-  }
-
-  static const IOExternalMethodDispatch methods[] = {
-      /* 0 */ {(IOExternalMethodAction)&PandoraUserClient::kread, 3, 0, 0, 0},
-      /* 1 */ {(IOExternalMethodAction)&PandoraUserClient::kwrite, 3, 0, 0, 0},
-      /* 2 */
-      {(IOExternalMethodAction)&PandoraUserClient::getKernelBase, 0, 0, 1, 0},
-      /* 3 */
-      {(IOExternalMethodAction)&PandoraUserClient::getPandoraLoadMetadata, 0, 0,
-       0, sizeof(PandoraMetadata)},
-      /* 4 */ {(IOExternalMethodAction)&PandoraUserClient::pread_pid, 4, 0, 0,
-               0},
-      /* 5 */ {(IOExternalMethodAction)&PandoraUserClient::pwrite_pid, 4, 0, 0,
-               0},
-      /* 7 */ {(IOExternalMethodAction)&PandoraUserClient::kcall, 0,
-               sizeof(PandoraKCallRequest), 0, sizeof(PandoraKCallResponse)},
-      /* 8 */ {(IOExternalMethodAction)&PandoraUserClient::runArbFuncWithTaskArgPid, 2, 0, 1, 0},
-  };
-
-  if (selector < sizeof(methods) / sizeof(methods[0])) {
-    dispatch = const_cast<IOExternalMethodDispatch *>(&methods[selector]);
-    target = this;
-  }
-
-  return super::externalMethod(selector, args, dispatch, target, reference);
-}
-
-IOReturn PandoraUserClient::kcall(PandoraUserClient *client, void *reference,
-                                  IOExternalMethodArguments *args) {
-  (void)client;
+                                           OSObject *target,
+                                           void *reference) {
+  (void)dispatch;
+  (void)target;
   (void)reference;
 
-  if (!args || !args->structureInput || args->structureInputSize < sizeof(PandoraKCallRequest) ||
-      !args->structureOutput || args->structureOutputSize < sizeof(PandoraKCallResponse)) {
-    return kIOReturnBadArgument;
+  PandoraUserClientMethodLookup lookup = {};
+  if (!pandora_modules_lookup_userclient_method(selector, &lookup) ||
+      !lookup.dispatch) {
+    return kIOReturnUnsupported;
   }
 
-  const auto *req =
-      static_cast<const PandoraKCallRequest *>(args->structureInput);
-
-  if (req->argCount > 8) {
-    return kIOReturnBadArgument;
-  }
-
-  PandoraKCallResult res = pandora_kcall(req->fn, req->args, req->argCount);
-
-  PandoraKCallResponse out = {
-      .status = res.status,
-      .ret0 = res.ret0,
-  };
-
-  memcpy(args->structureOutput, &out, sizeof(out));
-  args->structureOutputSize = sizeof(out);
-
-  return kIOReturnSuccess;
-}
-
-IOReturn PandoraUserClient::kread(PandoraUserClient *client, void *reference,
-                                  IOExternalMethodArguments *args) {
-  uint64_t kaddr = args->scalarInput[0]; // Kernel address to read from
-  user_addr_t uaddr =
-      args->scalarInput[1];          // User-space buffer to copy data into
-  size_t len = args->scalarInput[2]; // Length of data to read
-
-  if (!kaddr || !uaddr || !len)
-    return kIOReturnBadArgument;
-
-  // Allocate a buffer to read the data
-  void *buffer = IOMalloc(len);
-  if (!buffer) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::kread: Failed to allocate buffer of size %zu @ "
-        "0x%08x%08x\n",
-        len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu));
-    return kIOReturnNoMemory;
-  }
-
-  KUError err = KernelUtilities::kread(kaddr, buffer, len);
-
-  if (err != KUErrorSuccess) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::kread: Failed to read %zu bytes from kernel "
-        "address 0x%08x%08x: %s (%d). extra data [%llu, %llu, %llu]\n",
-        len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu),
-        get_error_name(err), err, extraerrdata1, extraerrdata2, extraerrdata3);
-    IOFree(buffer, len);
-    return kIOReturnVMError;
-  }
-
-  // Log the read data
-  PANDORA_LOG_DEFAULT(
-      "KextRWUserClient::kread: Read %zu bytes from kernel address "
-      "0x%08x%08x\n",
-      len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu));
-
-  // copy to user space
-  int error = copyout(buffer, uaddr, len);
-
-  if (error != 0) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "KextRWUserClient::kread: Failed to copy data to user space. "
-        "Error code: %d\n",
-        error);
-  }
-
-  IOFree(buffer, len);
-  return (error == 0 && err == KUErrorSuccess) ? kIOReturnSuccess
-                                               : kIOReturnVMError;
-}
-
-IOReturn PandoraUserClient::kwrite(PandoraUserClient *client, void *reference,
-                                   IOExternalMethodArguments *args) {
-  user_addr_t uaddr =
-      args->scalarInput[0];              // User-space buffer to copy data from
-  uint64_t kaddr = args->scalarInput[1]; // Kernel address to write to
-
-  size_t len = args->scalarInput[2]; // Length of data to write
-
-  if (!kaddr || !uaddr || !len)
-    return kIOReturnBadArgument;
-
-  // Allocate a buffer to read data from user space
-  void *buffer = IOMalloc(len);
-  if (!buffer) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::kwrite: Failed to allocate buffer of size %zu @ "
-        "0x%08x%08x\n",
-        len, (uint32_t)(kaddr >> 32), (uint32_t)(kaddr & 0xffffffffu));
-    return kIOReturnNoMemory;
-  }
-
-  // copy from user space
-  int error = copyin(uaddr, buffer, len);
-  if (error != 0) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::kwrite: Failed to copy data from user space. "
-        "Error code: %d\n",
-        error);
-    IOFree(buffer, len);
-    return kIOReturnVMError;
-  }
-
-  // write to kernel space
-  KUError err = KernelUtilities::kwrite(kaddr, buffer, len);
-  if (err != KUErrorSuccess) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::kwrite: Failed to write %zu bytes to kernel "
-        "address 0x%llx. Error code: %s (%d). extra data [%llu, %llu, %llu]\n",
-        len, kaddr, get_error_name(err), err, extraerrdata1, extraerrdata2,
-        extraerrdata3);
-    IOFree(buffer, len);
-    return kIOReturnVMError;
-  }
-
-  return kIOReturnSuccess;
-}
-
-IOReturn PandoraUserClient::pread_pid(PandoraUserClient *client,
-                                      void *reference,
-                                      IOExternalMethodArguments *args) {
-  pid_t pid = (pid_t)args->scalarInput[0];
-  uint64_t paddr = args->scalarInput[1];
-  user_addr_t uaddr = args->scalarInput[2];
-  size_t len = args->scalarInput[3];
-
-  if (!pid || !paddr || !uaddr || !len)
-    return kIOReturnBadArgument;
-
-  proc_t p = proc_find(pid);
-  if (!p) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::pread_pid: proc_find failed for pid %d", pid);
-    return kIOReturnNotFound;
-  }
-
-  task_t t = proc_task(p);
-  if (t == TASK_NULL) {
-    proc_rele(p);
-    return kIOReturnNotFound;
-  }
-
-  void *buffer = IOMalloc(len);
-  if (!buffer) {
-    proc_rele(p);
-    return kIOReturnNoMemory;
-  }
-
-  KUError err = KernelUtilities::pread(t, paddr, buffer, len);
-  if (err != KUErrorSuccess) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::pread_pid: Failed to read %zu bytes from pid %d "
-        "addr 0x%llx: %s (%d)",
-        len, pid, paddr, get_error_name(err), err);
-    IOFree(buffer, len);
-    proc_rele(p);
-    return kIOReturnVMError;
-  }
-
-  int error = copyout(buffer, uaddr, len);
-  IOFree(buffer, len);
-  proc_rele(p);
-
-  return (error == 0) ? kIOReturnSuccess : kIOReturnVMError;
-}
-
-IOReturn PandoraUserClient::pwrite_pid(PandoraUserClient *client,
-                                       void *reference,
-                                       IOExternalMethodArguments *args) {
-  pid_t pid = (pid_t)args->scalarInput[0];
-  user_addr_t uaddr = args->scalarInput[1];
-  uint64_t paddr = args->scalarInput[2];
-  size_t len = args->scalarInput[3];
-
-  if (!pid || !paddr || !uaddr || !len)
-    return kIOReturnBadArgument;
-
-  proc_t p = proc_find(pid);
-  if (!p) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::pwrite_pid: proc_find failed for pid %d", pid);
-    return kIOReturnNotFound;
-  }
-
-  task_t t = proc_task(p);
-  if (t == TASK_NULL) {
-    proc_rele(p);
-    return kIOReturnNotFound;
-  }
-
-  void *buffer = IOMalloc(len);
-  if (!buffer) {
-    proc_rele(p);
-    return kIOReturnNoMemory;
-  }
-
-  int error = copyin(uaddr, buffer, len);
-  if (error != 0) {
-    IOFree(buffer, len);
-    proc_rele(p);
-    return kIOReturnVMError;
-  }
-
-  KUError err = KernelUtilities::pwrite(t, paddr, buffer, len);
-  IOFree(buffer, len);
-  proc_rele(p);
-
-  if (err != KUErrorSuccess) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::pwrite_pid: Failed to write %zu bytes to pid %d "
-        "addr 0x%llx: %s (%d)",
-        len, pid, paddr, get_error_name(err), err);
-    return kIOReturnVMError;
-  }
-  return kIOReturnSuccess;
-}
-
-IOReturn PandoraUserClient::getKernelBase(PandoraUserClient *client,
-                                          void *reference,
-                                          IOExternalMethodArguments *args) {
-  uint64_t kbase = client->ku.kernelBase();
-
-  if (kbase == 0) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::getKernelBase: Failed to retrieve kernel base "
-        "address, it is zero");
-    return kIOReturnError;
-  }
-
-  PANDORA_LOG_DEFAULT("PandoraUserClient::getKernelBase: Kernel base address: "
-                      "0x%08x%08x",
-                      (uint32_t)(kbase >> 32), (uint32_t)(kbase & 0xFFFFFFFFu));
-
-  args->scalarOutput[0] =
-      kbase ^ KADDR_OBFUSCATION_KEY; // XOR with key to obfuscate
-  return kIOReturnSuccess;
-}
-
-IOReturn
-PandoraUserClient::getPandoraLoadMetadata(PandoraUserClient *client,
-                                          void *reference,
-                                          IOExternalMethodArguments *args) {
-  if (args->structureOutputSize < sizeof(PandoraMetadata)) {
-    PANDORA_USERCLIENT_LOG_ERROR(
-        "PandoraUserClient::getPandoraLoadMetadata: Output buffer too small. "
-        "Expected %zu, got %u",
-        sizeof(PandoraMetadata), args->structureOutputSize);
-    return kIOReturnBadArgument;
-  }
-
-  PandoraMetadata metadata = {};
-  metadata.kmod_start_time =
-      kmod_run ? kmod_start_time : TimestampPair{0, 0, 0};
-  metadata.io_service_start_time =
-      io_service_start_called ? io_service_start_time : TimestampPair{0, 0, 0};
-  metadata.user_client_init_time =
-      user_client_initialized ? user_client_init_time : TimestampPair{0, 0, 0};
-  metadata.pid1_exists = pid1_exists;
-
-  memcpy(args->structureOutput, &metadata, sizeof(PandoraMetadata));
-  args->structureOutputSize = sizeof(PandoraMetadata);
-
-  PANDORA_LOG_DEFAULT(
-      "PandoraUserClient::getPandoraLoadMetadata: Returned metadata - "
-      "kmod_start: %llu (%llu), io_service_start: %llu (%llu), "
-      "user_client_init: %llu (%llu), "
-      "pid1_exists: %s",
-      metadata.kmod_start_time.unixTime, metadata.kmod_start_time.machTime,
-      metadata.io_service_start_time.unixTime,
-      metadata.io_service_start_time.machTime,
-      metadata.user_client_init_time.unixTime,
-      metadata.user_client_init_time.machTime,
-      metadata.pid1_exists ? "true" : "false");
-
-  return kIOReturnSuccess;
-}
-
-IOReturn
-PandoraUserClient::runArbFuncWithTaskArgPid(PandoraUserClient *client,
-                                          void *reference,
-                                          IOExternalMethodArguments *args) {
-    uint64_t funcAddr = args->scalarInput[0];
-    pid_t pid = (pid_t)args->scalarInput[1];
-
-    if (!funcAddr || !pid)
-        return kIOReturnBadArgument;
-    proc_t p = proc_find(pid);
-    if (!p) {
-        PANDORA_USERCLIENT_LOG_ERROR(
-            "PandoraUserClient::runArbFuncWithTaskArgPid: proc_find failed for pid %d", pid);
-        return kIOReturnNotFound;
-    }
-    task_t t = proc_task(p);
-    if (t == TASK_NULL) {
-        proc_rele(p);
-        return kIOReturnNotFound;
-    }
-    PandoraKCallResult res = pandora_kcall(funcAddr, (uint64_t *)&t, 1);
-    proc_rele(p);
-    args->scalarOutput[0] = res.ret0;
-    return res.status;
+  return super::externalMethod(
+      selector, args,
+      const_cast<IOExternalMethodDispatch *>(lookup.dispatch), this,
+      lookup.reference);
 }

@@ -14,6 +14,42 @@ uint64_t pd_kslide = 0;
 
 io_connect_t gClient = MACH_PORT_NULL;
 
+static inline bool pandora_should_try_legacy_selector(kern_return_t kr) {
+  return (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported);
+}
+
+static inline kern_return_t pandora_call_scalar_method(io_connect_t client,
+                                                       uint32_t selector,
+                                                       const uint64_t *input,
+                                                       uint32_t inputCount,
+                                                       uint64_t *output,
+                                                       uint32_t *outputCount,
+                                                       uint32_t legacySelector) {
+  kern_return_t kr = IOConnectCallScalarMethod(client, selector, input,
+                                               inputCount, output, outputCount);
+  if (pandora_should_try_legacy_selector(kr)) {
+    kr = IOConnectCallScalarMethod(client, legacySelector, input, inputCount,
+                                   output, outputCount);
+  }
+  return kr;
+}
+
+static inline kern_return_t pandora_call_struct_method(io_connect_t client,
+                                                       uint32_t selector,
+                                                       const void *input,
+                                                       size_t inputSize,
+                                                       void *output,
+                                                       size_t *outputSize,
+                                                       uint32_t legacySelector) {
+  kern_return_t kr = IOConnectCallStructMethod(client, selector, input, inputSize,
+                                               output, outputSize);
+  if (pandora_should_try_legacy_selector(kr)) {
+    kr = IOConnectCallStructMethod(client, legacySelector, input, inputSize,
+                                   output, outputSize);
+  }
+  return kr;
+}
+
 static inline io_connect_t pandora_open(void) {
   io_service_t service = IOServiceGetMatchingService(
       kIOMainPortDefault, IOServiceMatching("Pandora"));
@@ -36,39 +72,51 @@ static inline io_connect_t pandora_open(void) {
 static inline kern_return_t pandora_read(io_connect_t client, uint64_t kaddr,
                                          void *uaddr, uint64_t len) {
   uint64_t in[] = {kaddr, (uint64_t)uaddr, len};
-  return IOConnectCallScalarMethod(client, 0, in, 3, NULL, NULL);
+  return pandora_call_scalar_method(client, PANDORA_UC_SELECTOR_KREAD, in, 3,
+                                    NULL, NULL,
+                                    PANDORA_UC_LOCAL_SELECTOR_KREAD);
 }
 
 static inline kern_return_t pandora_write(io_connect_t client, void *uaddr,
                                           uint64_t kaddr, uint64_t len) {
   uint64_t in[] = {(uint64_t)uaddr, kaddr, len};
-  return IOConnectCallScalarMethod(client, 1, in, 3, NULL, NULL);
+  return pandora_call_scalar_method(client, PANDORA_UC_SELECTOR_KWRITE, in, 3,
+                                    NULL, NULL,
+                                    PANDORA_UC_LOCAL_SELECTOR_KWRITE);
 }
 
 static inline kern_return_t pandora_get_kbase(io_connect_t client,
                                               uint64_t *out) {
   uint32_t outCnt = 1;
-  return IOConnectCallScalarMethod(client, 2, NULL, 0, out, &outCnt);
+  return pandora_call_scalar_method(client, PANDORA_UC_SELECTOR_GET_KERNEL_BASE,
+                                    NULL, 0, out, &outCnt,
+                                    PANDORA_UC_LOCAL_SELECTOR_GET_KERNEL_BASE);
 }
 
 static inline kern_return_t pandora_get_metadata(io_connect_t client,
                                                  PandoraMetadata *metadata) {
   size_t outputSize = sizeof(PandoraMetadata);
-  return IOConnectCallStructMethod(client, 3, NULL, 0, metadata, &outputSize);
+  return pandora_call_struct_method(client, PANDORA_UC_SELECTOR_GET_METADATA,
+                                    NULL, 0, metadata, &outputSize,
+                                    PANDORA_UC_LOCAL_SELECTOR_GET_METADATA);
 }
 
 static inline kern_return_t pandora_proc_read(io_connect_t client, pid_t pid,
                                               uint64_t paddr, void *uaddr,
                                               uint64_t len) {
   uint64_t in[] = {(uint64_t)(int64_t)pid, paddr, (uint64_t)uaddr, len};
-  return IOConnectCallScalarMethod(client, 4, in, 4, NULL, NULL);
+  return pandora_call_scalar_method(client, PANDORA_UC_SELECTOR_PREAD_PID, in,
+                                    4, NULL, NULL,
+                                    PANDORA_UC_LOCAL_SELECTOR_PREAD_PID);
 }
 
 static inline kern_return_t pandora_proc_write(io_connect_t client, pid_t pid,
                                                void *uaddr, uint64_t paddr,
                                                uint64_t len) {
   uint64_t in[] = {(uint64_t)(int64_t)pid, (uint64_t)uaddr, paddr, len};
-  return IOConnectCallScalarMethod(client, 5, in, 4, NULL, NULL);
+  return pandora_call_scalar_method(client, PANDORA_UC_SELECTOR_PWRITE_PID, in,
+                                    4, NULL, NULL,
+                                    PANDORA_UC_LOCAL_SELECTOR_PWRITE_PID);
 }
 
 static inline kern_return_t pandora_kcall(io_connect_t client,
@@ -80,8 +128,7 @@ static inline kern_return_t pandora_kcall(io_connect_t client,
   }
 
   size_t outSize = sizeof(*resp);
-  return IOConnectCallStructMethod(client, selector, req, sizeof(*req), resp,
-                                   &outSize);
+  return IOConnectCallStructMethod(client, selector, req, sizeof(*req), resp, &outSize);
 }
 
 static inline kern_return_t pandora_run_arb_func_with_task_arg_pid(
@@ -251,11 +298,14 @@ kern_return_t pd_kcall(const PandoraKCallRequest *req, PandoraKCallResponse *res
     return KERN_INVALID_CAPABILITY;
   }
 
-  // Prefer the updated selector numbering (6/7). Fall back to the older
-  // numbering (7/8) for compatibility with older kext builds.
-  kern_return_t kr =
-      pandora_kcall(gClient, PANDORA_UC_SELECTOR_KCALL_PREFERRED, req, resp);
+  // Prefer module-scoped selector, then fall back to legacy numbering.
+  kern_return_t kr = pandora_kcall(gClient, PANDORA_UC_SELECTOR_KCALL, req, resp);
   if (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported) {
+    // Historical preferred value in unscoped builds.
+    kr = pandora_kcall(gClient, 6, req, resp);
+  }
+  if (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported) {
+    // Older legacy value in unscoped builds.
     kr = pandora_kcall(gClient, 7 /* legacy KCALL */, req, resp);
   }
   return kr;
@@ -292,8 +342,12 @@ kern_return_t pd_run_arb_func_with_task_arg_pid(uint64_t funcAddr, pid_t pid,
   }
 
   kern_return_t kr = pandora_run_arb_func_with_task_arg_pid(
-      gClient, PANDORA_UC_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID_PREFERRED,
+      gClient, PANDORA_UC_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID,
       funcAddr, pid, ret0);
+  if (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported) {
+    kr = pandora_run_arb_func_with_task_arg_pid(gClient, 7,
+                                                funcAddr, pid, ret0);
+  }
   if (kr == kIOReturnBadArgument || kr == kIOReturnUnsupported) {
     kr = pandora_run_arb_func_with_task_arg_pid(gClient, 8 /* legacy RUN_ARB */,
                                                 funcAddr, pid, ret0);

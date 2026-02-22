@@ -15,8 +15,9 @@ static kern_return_t initialize_cpp() {
   TimeUtilities::init();
 
   PANDORA_LOG_DEFAULT("kmod.cpp:initialize_cpp: I've been run!");
-  kmod_run = true;
-  kmod_start_time = makeCurrentTimestampPair();
+  PandoraRuntimeState &runtime = pandora_runtime_state();
+  runtime.telemetry.kmodRan = true;
+  runtime.telemetry.kmodStartTime = makeCurrentTimestampPair();
 
   return KERN_SUCCESS;
 }

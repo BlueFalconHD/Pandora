@@ -30,18 +30,57 @@ typedef struct {
 // UserClient method selectors
 //
 // Note: The Kext and Library historically drifted on selector numbering.
-// The library wrappers for newer methods will try both the "legacy" and
-// "preferred" selector numbers at runtime to stay compatible.
+// The current Kext expects module-scoped selectors:
+//   selector = (module_id << 16) | local_selector
+// The library wrappers keep runtime fallback to legacy unscoped selectors.
 // ---------------------------------------------------------------------------
 typedef enum {
-  PANDORA_UC_SELECTOR_KREAD = 0,
-  PANDORA_UC_SELECTOR_KWRITE = 1,
-  PANDORA_UC_SELECTOR_GET_KERNEL_BASE = 2,
-  PANDORA_UC_SELECTOR_GET_METADATA = 3,
-  PANDORA_UC_SELECTOR_PREAD_PID = 4,
-  PANDORA_UC_SELECTOR_PWRITE_PID = 5,
-  PANDORA_UC_SELECTOR_KCALL_PREFERRED = 6,
-  PANDORA_UC_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID_PREFERRED = 7,
+  PANDORA_UC_MODULE_ID_HW_ACCESS = 0x0001,
+  PANDORA_UC_MODULE_ID_PATCH_OSVARIANT = 0x0002,
+} PandoraUserClientModuleId;
+
+#define PANDORA_UC_MODULE_SELECTOR_SHIFT 16u
+#define PANDORA_UC_SELECTOR_COMPOSE(module_id, local_selector)                  \
+  (((uint32_t)(module_id) << PANDORA_UC_MODULE_SELECTOR_SHIFT) |               \
+   (uint32_t)(local_selector))
+
+typedef enum {
+  PANDORA_UC_LOCAL_SELECTOR_KREAD = 0,
+  PANDORA_UC_LOCAL_SELECTOR_KWRITE = 1,
+  PANDORA_UC_LOCAL_SELECTOR_GET_KERNEL_BASE = 2,
+  PANDORA_UC_LOCAL_SELECTOR_GET_METADATA = 3,
+  PANDORA_UC_LOCAL_SELECTOR_PREAD_PID = 4,
+  PANDORA_UC_LOCAL_SELECTOR_PWRITE_PID = 5,
+  PANDORA_UC_LOCAL_SELECTOR_KCALL = 7,
+  PANDORA_UC_LOCAL_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID = 8,
+} PandoraHwAccessLocalSelector;
+
+typedef enum {
+  PANDORA_UC_SELECTOR_KREAD =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_KREAD),
+  PANDORA_UC_SELECTOR_KWRITE =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_KWRITE),
+  PANDORA_UC_SELECTOR_GET_KERNEL_BASE =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_GET_KERNEL_BASE),
+  PANDORA_UC_SELECTOR_GET_METADATA =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_GET_METADATA),
+  PANDORA_UC_SELECTOR_PREAD_PID =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_PREAD_PID),
+  PANDORA_UC_SELECTOR_PWRITE_PID =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_PWRITE_PID),
+  PANDORA_UC_SELECTOR_KCALL =
+      PANDORA_UC_SELECTOR_COMPOSE(PANDORA_UC_MODULE_ID_HW_ACCESS,
+                                  PANDORA_UC_LOCAL_SELECTOR_KCALL),
+  PANDORA_UC_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID =
+      PANDORA_UC_SELECTOR_COMPOSE(
+          PANDORA_UC_MODULE_ID_HW_ACCESS,
+          PANDORA_UC_LOCAL_SELECTOR_RUN_ARB_FUNC_WITH_TASK_ARG_PID),
 } PandoraUserClientSelector;
 
 // Request/response for the kernel-call interface.
