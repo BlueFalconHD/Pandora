@@ -1,3 +1,4 @@
+#include "calypso/function.h"
 #include "hexdump.h"
 #include "kernel/kernel_task.h"
 #include "pandora.h"
@@ -30,18 +31,7 @@
 #include "calypso/page_size.h"
 #include "calypso/xref.h"
 
-#define FUNC_PROC_FIND kslide(0xFFFFFE0008DFEE7CULL)
-#define FUNC_PROC_RELE kslide(0xFFFFFE0008DFF518ULL)
-#define FUNC_PROC_TASK kslide(0xFFFFFE0008E02274ULL)
-#define FUNC_RO_FOR_PROC kslide(0xFFFFFE0008E010C0ULL)
-
-#define PROC_STRUCT_SIZE_PTR kslide(0xFFFFFE000C551C30ULL)
-#define PROC_STRUCT_SIZE_DEFAULT 0x7A0ULL
-#define PROC_STRUCT_SIZE_MAX 0x10000ULL
-
-#define PROC_OFF_RO_PTR 0x18ULL
-#define PROC_OFF_FLAGS 0x468ULL
-#define TASK_OFF_RO_PTR 0x3E8ULL
+#include "patches/thread_set_state/tss.h"
 
 int main(int argc, char *argv[]) {
   if (pd_init() == -1) {
@@ -96,9 +86,9 @@ int main(int argc, char *argv[]) {
 
   size_t tss_off = (size_t)(tss_ptr - cstring_base);
   uint64_t tss_kva = cstring_view->base_address + (uint64_t)tss_off;
-  printf("Found thread-set-state string at 0x%llx\n", (unsigned long long)tss_kva);
 
-  // make a memdiff view of the text segment of kernel
+  printf("'com.apple.private.thread-set-state' @ 0x%llx\n", (unsigned long long)tss_kva);
+
   struct section_64 *text_sect = NULL;
   findres = kernel_macho_find_section_by_name("__TEXT_EXEC", "__text", &text_sect);
   if (findres != 0 || !text_sect) {
@@ -118,15 +108,26 @@ int main(int argc, char *argv[]) {
   uint64_t *results = calloc(16, sizeof(uint64_t));
   int found = xref_find_adrp_add(text_view, tss_kva, results, 16);
 
-  printf("Found %u adrp+add instruction pairs referencing thread-set-state string:\n", found);
-  for (int i = 0; i < (found <= 1024 ? found : 1024); i++) {
-    printf("  0x%llx\n", results[i]);
+  printf("%d xrefs to 'com.apple.private.thread-set-state'\n", found);
+
+  if (found <= 0) {
+    printf("Failed to find any references to thread-set-state string\n");
+    free(results);
+    memdiff_destroy(text_view);
+    memdiff_destroy(cstring_view);
+    goto end;
   }
 
-  printf("\noffsets from IDA (kslid with 0x%llx):\n", pd_kslide);
-  printf("actual xref to target: 0x%llx\n", kslide(0xFFFFFE00088DCDFC));
-  printf("actual target address: 0x%llx\n", kslide(0xFFFFFE000705047A));
+  uint64_t fstart = find_function_start_bti(text_view, results[0]);
 
+  for (int i = 0; i < found; i++) {
+    if (find_function_start_bti(text_view, results[i]) != fstart) {
+      printf("Reference at 0x%llx is in a different function than the first reference at 0x%llx\n", results[i], results[0]);
+      goto end;
+    }
+  }
+
+  printf("thread_set_state_internal @ 0x%llx\n", (unsigned long long)fstart);
 
 end:
   pd_deinit();
