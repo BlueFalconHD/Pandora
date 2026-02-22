@@ -18,7 +18,7 @@ extern int kernel_macho_once;
 
 // user managed data
 
-extern struct segment_command_64 *kernel_macho_segments;
+extern struct segment_command_64 **kernel_macho_segments;
 extern size_t kernel_macho_segment_count;
 
 // functions
@@ -27,3 +27,9 @@ int kernel_macho_init(uint64_t kbase);
 uint64_t kernel_macho_deinit();
 uint64_t kernel_macho_fileoff_to_vmaddr(uint64_t fileoff);
 uint64_t kernel_macho_find_symbol(const char *symbol_name);
+uint64_t kernel_macho_find_symbol_or_die(const char *symbol_name);
+uint64_t kernel_macho_find_symbol_partial(const char *needle);
+
+int kernel_macho_print_segments();
+int kernel_macho_find_segment_by_name(const char *segname, struct segment_command_64 **out_seg);
+int kernel_macho_find_section_by_name(const char *segname, const char *sectname, struct section_64 **out_sect);
