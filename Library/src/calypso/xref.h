@@ -7,5 +7,7 @@
 
 
 int xref_find_adrp(memdiff_view *view, uint64_t target_addr, uint64_t *results, size_t max_results);
+int xref_find_adrp_add(memdiff_view *view, uint64_t target_addr, uint64_t *results, size_t max_results);
+int xref_adrp_add(memdiff_view *view, uint64_t target_addr, uint64_t *results, size_t max_results);
 
 #endif
